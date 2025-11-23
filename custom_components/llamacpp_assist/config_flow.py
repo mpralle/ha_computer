@@ -142,10 +142,6 @@ class LlamaCppAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class LlamaCppAssistOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Llama.cpp Assist."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -154,19 +150,19 @@ class LlamaCppAssistOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         # Get current values from config or options
-        current_temp = self.config_entry.options.get(
+        current_temp = self.options.get(
             CONF_TEMPERATURE,
             self.config_entry.data.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE),
         )
-        current_max_tokens = self.config_entry.options.get(
+        current_max_tokens = self.options.get(
             CONF_MAX_TOKENS,
             self.config_entry.data.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS),
         )
-        current_timeout = self.config_entry.options.get(
+        current_timeout = self.options.get(
             CONF_TIMEOUT,
             self.config_entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT),
         )
-        current_prompt_prefix = self.config_entry.options.get(
+        current_prompt_prefix = self.options.get(
             CONF_SYSTEM_PROMPT_PREFIX, ""
         )
 
