@@ -39,10 +39,16 @@ from .calendar_api import CalendarCreateEventTool, CalendarListEventsTool
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: Any,
+) -> None:
     """Set up Llama.cpp conversation agent from a config entry."""
+    _LOGGER.debug("Setting up Llama.cpp conversation agent for entry %s", entry.entry_id)
     agent = LlamaCppConversationEntity(hass, entry)
     conversation.async_set_agent(hass, entry, agent)
+    _LOGGER.debug("Registered Llama.cpp conversation agent")
 
 
 class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
