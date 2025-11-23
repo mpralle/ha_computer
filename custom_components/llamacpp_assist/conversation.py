@@ -185,6 +185,7 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
         
         iteration = 0
         current_messages = messages.copy()
+        use_tools = True  # Try with tools first
         
         while iteration < max_iterations:
             iteration += 1
@@ -194,23 +195,47 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
                 "messages": current_messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "tools": tool_schemas,
             }
             
-            _LOGGER.debug("Calling llama.cpp (iteration %d): %s", iteration, server_url)
+            # Add tools if supported
+            if use_tools and tool_schemas:
+                payload["tools"] = tool_schemas
+            
+            _LOGGER.debug("Calling llama.cpp (iteration %d, tools=%s): %s", iteration, use_tools, server_url)
             
             # Make request
-            async with asyncio.timeout(timeout):
-                async with session.post(
-                    f"{server_url.rstrip('/')}/v1/chat/completions",
-                    json=payload,
-                    headers=headers,
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        raise ValueError(f"Server returned status {response.status}: {error_text}")
-                    
-                    data = await response.json()
+            try:
+                async with asyncio.timeout(timeout):
+                    async with session.post(
+                        f"{server_url.rstrip('/')}/v1/chat/completions",
+                        json=payload,
+                        headers=headers,
+                    ) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            
+                            # Check if error is related to tools not being supported
+                            if use_tools and ("tools param requires" in error_text.lower() or 
+                                            "unknown method" in error_text.lower() or
+                                            "jinja" in error_text.lower()):
+                                _LOGGER.warning(
+                                    "llama.cpp server doesn't support tools properly. "
+                                    "Falling back to basic conversation mode. "
+                                    "Update llama.cpp or use a model with tool support for device control."
+                                )
+                                use_tools = False
+                                iteration = 0  # Reset iteration counter
+                                current_messages = messages.copy()  # Reset messages
+                                continue  # Retry without tools
+                            
+                            raise ValueError(f"Server returned status {response.status}: {error_text}")
+                        
+                        data = await response.json()
+            except asyncio.TimeoutError:
+                raise
+            except Exception as err:
+                _LOGGER.error("Error calling llama.cpp: %s", err)
+                raise
             
             # Extract response
             if "choices" not in data or not data["choices"]:
@@ -218,32 +243,49 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
             
             choice = data["choices"][0]
             message = choice.get("message", {})
+            content = message.get("content", "")
             
-            # Check for tool calls
+            # Check for OpenAI-style tool calls first
             tool_calls = message.get("tool_calls", [])
+            
+            # If no OpenAI tool calls, try parsing text-based tool calls
+            if not tool_calls and content:
+                tool_calls = self._parse_text_tool_calls(content)
+                if tool_calls:
+                    _LOGGER.debug("Parsed %d text-based tool calls", len(tool_calls))
             
             if not tool_calls:
                 # No tool calls, return the response
-                return message.get("content", "I don't have a response.")
+                # Extract just the RESPONSE section if present
+                if "<RESPONSE>" in content and "</RESPONSE>" in content:
+                    start = content.index("<RESPONSE>") + len("<RESPONSE>")
+                    end = content.index("</RESPONSE>")
+                    return content[start:end].strip()
+                return content or "I don't have a response."
             
-            # Add assistant message with tool calls to history
-            current_messages.append(message)
+            # Add assistant message to history
+            current_messages.append({"role": "assistant", "content": content})
             
             # Execute tool calls
             _LOGGER.debug("Executing %d tool calls", len(tool_calls))
             
+            tool_results = []
             for tool_call in tool_calls:
-                tool_name = tool_call["function"]["name"]
-                tool_args_str = tool_call["function"]["arguments"]
-                tool_id = tool_call.get("id", "call_" + ulid.ulid_now())
+                if isinstance(tool_call, dict) and "function" in tool_call:
+                    # OpenAI-style tool call
+                    tool_name = tool_call["function"]["name"]
+                    tool_args_str = tool_call["function"]["arguments"]
+                    
+                    try:
+                        tool_args = json.loads(tool_args_str) if isinstance(tool_args_str, str) else tool_args_str
+                    except json.JSONDecodeError:
+                        tool_args = {}
+                else:
+                    # Text-based tool call
+                    tool_name = tool_call.get("name")
+                    tool_args = tool_call.get("arguments", {})
                 
-                _LOGGER.debug("Tool call: %s(%s)", tool_name, tool_args_str)
-                
-                # Parse arguments
-                try:
-                    tool_args = json.loads(tool_args_str)
-                except json.JSONDecodeError:
-                    tool_args = {}
+                _LOGGER.debug("Tool call: %s(%s)", tool_name, tool_args)
                 
                 # Execute tool
                 tool = self.tool_registry.get(tool_name)
@@ -251,27 +293,87 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
                     try:
                         result = await tool.async_call(**tool_args)
                         result_str = json.dumps(result)
+                        tool_results.append(f"{tool_name}: {result_str}")
                     except Exception as err:
                         _LOGGER.error("Tool execution failed: %s", err)
                         result_str = json.dumps({
                             "success": False,
                             "error": str(err),
                         })
+                        tool_results.append(f"{tool_name}: {result_str}")
                 else:
                     _LOGGER.error("Tool not found: %s", tool_name)
                     result_str = json.dumps({
                         "success": False,
                         "error": f"Tool {tool_name} not found",
                     })
-                
-                # Add tool response to messages
-                current_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "content": result_str,
-                })
+                    tool_results.append(f"{tool_name}: {result_str}")
+            
+            # Add tool results to messages
+            current_messages.append({
+                "role": "user",
+                "content": f"Tool results:\n" + "\n".join(tool_results),
+            })
             
             # Continue loop to get final response
         
         # Max iterations reached
         return "I'm sorry, I couldn't complete the task after multiple attempts."
+
+    def _parse_text_tool_calls(self, content: str) -> list[dict[str, Any]]:
+        """Parse text-based tool calls from LLM response.
+        
+        Expected format:
+        <TOOL_CALL>
+        tool_name(arg1="value1", arg2="value2")
+        </TOOL_CALL>
+        """
+        import re
+        
+        tool_calls = []
+        
+        # Find all TOOL_CALL blocks
+        pattern = r"<TOOL_CALL>(.*?)</TOOL_CALL>"
+        matches = re.findall(pattern, content, re.DOTALL)
+        
+        for match in matches:
+            match = match.strip()
+            
+            # Parse tool_name(arg1=value1, arg2=value2)
+            # Match tool name
+            tool_match = re.match(r"(\w+)\((.*)\)", match, re.DOTALL)
+            if not tool_match:
+                _LOGGER.warning("Could not parse tool call: %s", match)
+                continue
+            
+            tool_name = tool_match.group(1)
+            args_str = tool_match.group(2).strip()
+            
+            # Parse arguments
+            arguments = {}
+            if args_str:
+                # Simple parser for key=value pairs
+                # Handle quoted strings and basic values
+                arg_pattern = r'(\w+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^,\s]+))'
+                for arg_match in re.finditer(arg_pattern, args_str):
+                    key = arg_match.group(1)
+                    # Get the value from whichever group matched (quoted or unquoted)
+                    value = arg_match.group(2) or arg_match.group(3) or arg_match.group(4)
+                    
+                    # Try to parse as JSON/Python literal for dicts/lists
+                    if value and (value.startswith("{") or value.startswith("[")):
+                        try:
+                            value = json.loads(value)
+                        except:
+                            pass
+                    
+                    arguments[key] = value
+            
+            tool_calls.append({
+                "name": tool_name,
+                "arguments": arguments,
+            })
+            
+            _LOGGER.debug("Parsed text tool call: %s with args %s", tool_name, arguments)
+        
+        return tool_calls
