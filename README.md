@@ -104,19 +104,31 @@ The integration will test the connection and register as a conversation agent.
 
 ## Setting Up as Default Assistant
 
-### For Voice Assistants
+> [!IMPORTANT]
+> After installing the integration, you **must select it as your conversation agent** in either a Voice Assistant OR the Assist panel. The integration doesn't create a new UI page - it registers as an available conversation agent.
+
+### For Voice Assistants (Recommended for Voice Control)
 
 1. Go to **Settings** → **Voice Assistants**
-2. Select your voice assistant (or create a new one)
-3. Under **Conversation Agent**, select **Llama.cpp Assist**
-4. Configure STT (Speech-to-Text) and TTS (Text-to-Speech) as desired
-5. Save
+2. Click **"+ Add assistant"** (or select an existing one to edit)
+3. Give it a name (e.g., "Llama Assistant")
+4. Under **Conversation Agent** dropdown, select **"Llama.cpp Assist"**
+   - If you don't see it, try restarting Home Assistant or check TROUBLESHOOTING.md
+5. Configure STT (Speech-to-Text) - e.g., Whisper, Piper
+6. Configure TTS (Text-to-Speech) - e.g., Piper, Google TTS
+7. Click **"Create"** or **"Update"**
 
-### For Text Conversations
+### For Text Conversations (Quick Testing)
 
-1. Open the Assist panel (button in the sidebar)
-2. Click the settings icon
-3. Select **Llama.cpp Assist** as the conversation agent
+1. Open the **Assist panel** - click the 💬 icon in the sidebar
+2. At the **top right** of the Assist panel, click the **⚙️ (settings/gear icon)**
+3. Under **Conversation agent**, select **"Llama.cpp Assist"** from the dropdown
+4. Close the settings
+5. Type a test message like "Hello" or "List all lights"
+
+> [!NOTE]
+> If you don't see "Llama.cpp Assist" in the dropdown, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed help.
+
 
 ---
 

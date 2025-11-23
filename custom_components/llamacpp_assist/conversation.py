@@ -82,9 +82,14 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
         }
 
     @property
-    def supported_languages(self) -> list[str]:
+    def supported_languages(self) -> list[str] | str:
         """Return supported languages."""
-        return ["en"]  # Can be extended
+        return ["en", "de"]  # English and German supported
+
+    @property
+    def id(self) -> str:
+        """Return the agent ID."""
+        return self.entry.entry_id
 
     async def async_process(
         self, user_input: conversation.ConversationInput
