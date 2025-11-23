@@ -1,0 +1,491 @@
+"""Tool/function calling framework for Llama.cpp Assist integration."""
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from datetime import datetime
+import logging
+from typing import Any, TYPE_CHECKING
+
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+
+if TYPE_CHECKING:
+    from .memory import MemoryStorage
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class Tool(ABC):
+    """Base class for tools that can be called by the LLM."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize the tool."""
+        self.hass = hass
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the tool name."""
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Return the tool description."""
+
+    @property
+    @abstractmethod
+    def parameters(self) -> dict[str, Any]:
+        """Return the OpenAI function schema for parameters."""
+
+    @abstractmethod
+    async def async_call(self, **kwargs) -> dict[str, Any]:
+        """Execute the tool and return results."""
+
+    def get_schema(self) -> dict[str, Any]:
+        """Get the complete OpenAI function schema."""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
+
+
+class ToolRegistry:
+    """Registry for managing available tools."""
+
+    def __init__(self) -> None:
+        """Initialize the tool registry."""
+        self._tools: dict[str, Tool] = {}
+
+    def register(self, tool: Tool) -> None:
+        """Register a new tool."""
+        self._tools[tool.name] = tool
+        _LOGGER.debug("Registered tool: %s", tool.name)
+
+    def get(self, name: str) -> Tool | None:
+        """Get a tool by name."""
+        return self._tools.get(name)
+
+    def get_all_schemas(self) -> list[dict[str, Any]]:
+        """Get OpenAI function schemas for all registered tools."""
+        return [tool.get_schema() for tool in self._tools.values()]
+
+    def get_all_tools(self) -> list[Tool]:
+        """Get all registered tools."""
+        return list(self._tools.values())
+
+
+# === Home Assistant Core Tools ===
+
+
+class GetStateTool(Tool):
+    """Tool to get the state of an entity."""
+
+    @property
+    def name(self) -> str:
+        return "get_state"
+
+    @property
+    def description(self) -> str:
+        return "Get the current state and attributes of a Home Assistant entity"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string",
+                    "description": "The entity ID (e.g., 'light.living_room')",
+                }
+            },
+            "required": ["entity_id"],
+        }
+
+    async def async_call(self, entity_id: str, **kwargs) -> dict[str, Any]:
+        """Get entity state."""
+        state = self.hass.states.get(entity_id)
+        
+        if state is None:
+            return {
+                "success": False,
+                "error": f"Entity {entity_id} not found",
+            }
+        
+        return {
+            "success": True,
+            "entity_id": entity_id,
+            "state": state.state,
+            "attributes": dict(state.attributes),
+        }
+
+
+class ListEntitiesTool(Tool):
+    """Tool to list available entities."""
+
+    @property
+    def name(self) -> str:
+        return "list_entities"
+
+    @property
+    def description(self) -> str:
+        return "List Home Assistant entities, optionally filtered by domain or area"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "description": "Filter by domain (e.g., 'light', 'switch', 'sensor')",
+                },
+                "area": {
+                    "type": "string",
+                    "description": "Filter by area name (e.g., 'living room', 'bedroom')",
+                },
+            },
+            "required": [],
+        }
+
+    async def async_call(self, domain: str | None = None, area: str | None = None, **kwargs) -> dict[str, Any]:
+        """List entities."""
+        from homeassistant.helpers import area_registry, entity_registry
+        
+        ent_reg = entity_registry.async_get(self.hass)
+        area_reg = area_registry.async_get(self.hass)
+        
+        entities = []
+        
+        for state in self.hass.states.async_all():
+            entity_id = state.entity_id
+            
+            # Filter by domain
+            if domain and not entity_id.startswith(f"{domain}."):
+                continue
+            
+            # Filter by area
+            if area:
+                entity_entry = ent_reg.async_get(entity_id)
+                if entity_entry and entity_entry.area_id:
+                    area_entry = area_reg.async_get_area(entity_entry.area_id)
+                    if not area_entry or area_entry.name.lower() != area.lower():
+                        continue
+                else:
+                    continue
+            
+            entities.append({
+                "entity_id": entity_id,
+                "state": state.state,
+                "friendly_name": state.attributes.get("friendly_name", entity_id),
+            })
+        
+        return {
+            "success": True,
+            "count": len(entities),
+            "entities": entities[:50],  # Limit to 50
+        }
+
+
+class CallServiceTool(Tool):
+    """Tool to call Home Assistant services."""
+
+    @property
+    def name(self) -> str:
+        return "call_service"
+
+    @property
+    def description(self) -> str:
+        return "Call a Home Assistant service to control devices (e.g., turn on lights, set temperature)"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "description": "Service domain (e.g., 'light', 'switch', 'climate')",
+                },
+                "service": {
+                    "type": "string",
+                    "description": "Service name (e.g., 'turn_on', 'turn_off', 'set_temperature')",
+                },
+                "entity_id": {
+                    "type": "string",
+                    "description": "Target entity ID (optional if using area or device)",
+                },
+                "data": {
+                    "type": "object",
+                    "description": "Additional service data (e.g., brightness, temperature)",
+                },
+            },
+            "required": ["domain", "service"],
+        }
+
+    async def async_call(
+        self,
+        domain: str,
+        service: str,
+        entity_id: str | None = None,
+        data: dict[str, Any] | None = None,
+        **kwargs
+    ) -> dict[str, Any]:
+        """Call a service."""
+        try:
+            service_data = data or {}
+            if entity_id:
+                service_data["entity_id"] = entity_id
+            
+            await self.hass.services.async_call(
+                domain,
+                service,
+                service_data,
+                blocking=True,
+            )
+            
+            return {
+                "success": True,
+                "message": f"Called {domain}.{service}",
+            }
+            
+        except Exception as err:
+            _LOGGER.error("Service call failed: %s", err)
+            return {
+                "success": False,
+                "error": str(err),
+            }
+
+
+# === Utility Tools ===
+
+
+class GetTimeTool(Tool):
+    """Tool to get current time."""
+
+    @property
+    def name(self) -> str:
+        return "get_time"
+
+    @property
+    def description(self) -> str:
+        return "Get the current time"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
+
+    async def async_call(self, **kwargs) -> dict[str, Any]:
+        """Get current time."""
+        now = datetime.now()
+        return {
+            "success": True,
+            "time": now.strftime("%H:%M:%S"),
+            "timestamp": now.isoformat(),
+        }
+
+
+class GetDateTool(Tool):
+    """Tool to get current date."""
+
+    @property
+    def name(self) -> str:
+        return "get_date"
+
+    @property
+    def description(self) -> str:
+        return "Get the current date"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
+
+    async def async_call(self, **kwargs) -> dict[str, Any]:
+        """Get current date."""
+        now = datetime.now()
+        return {
+            "success": True,
+            "date": now.strftime("%Y-%m-%d"),
+            "day_of_week": now.strftime("%A"),
+            "timestamp": now.isoformat(),
+        }
+
+
+class GetDateTimeTool(Tool):
+    """Tool to get current date and time."""
+
+    @property
+    def name(self) -> str:
+        return "get_datetime"
+
+    @property
+    def description(self) -> str:
+        return "Get the current date and time"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
+
+    async def async_call(self, **kwargs) -> dict[str, Any]:
+        """Get current datetime."""
+        now = datetime.now()
+        return {
+            "success": True,
+            "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "day_of_week": now.strftime("%A"),
+            "timestamp": now.isoformat(),
+        }
+
+
+# === Memory Tools ===
+
+
+class MemoryReadTool(Tool):
+    """Tool to read from memory."""
+
+    def __init__(self, hass: HomeAssistant, memory: MemoryStorage) -> None:
+        """Initialize with memory storage."""
+        super().__init__(hass)
+        self.memory = memory
+
+    @property
+    def name(self) -> str:
+        return "memory_read"
+
+    @property
+    def description(self) -> str:
+        return "Read a value from persistent memory storage"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "Memory key to read (supports dot notation like 'preferences.light_color')",
+                }
+            },
+            "required": ["key"],
+        }
+
+    async def async_call(self, key: str, **kwargs) -> dict[str, Any]:
+        """Read from memory."""
+        value = self.memory.read(key)
+        
+        if value is None:
+            return {
+                "success": False,
+                "error": f"No value found for key '{key}'",
+            }
+        
+        return {
+            "success": True,
+            "key": key,
+            "value": value,
+        }
+
+
+class MemoryWriteTool(Tool):
+    """Tool to write to memory."""
+
+    def __init__(self, hass: HomeAssistant, memory: MemoryStorage) -> None:
+        """Initialize with memory storage."""
+        super().__init__(hass)
+        self.memory = memory
+
+    @property
+    def name(self) -> str:
+        return "memory_write"
+
+    @property
+    def description(self) -> str:
+        return "Write a value to persistent memory storage"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "Memory key to write (supports dot notation like 'preferences.light_color')",
+                },
+                "value": {
+                    "type": "string",
+                    "description": "Value to store",
+                },
+            },
+            "required": ["key", "value"],
+        }
+
+    async def async_call(self, key: str, value: str, **kwargs) -> dict[str, Any]:
+        """Write to memory."""
+        success = await self.memory.write(key, value)
+        
+        if not success:
+            return {
+                "success": False,
+                "error": "Failed to write to memory",
+            }
+        
+        return {
+            "success": True,
+            "message": f"Stored '{key}' = '{value}'",
+        }
+
+
+class MemoryListKeysTool(Tool):
+    """Tool to list memory keys."""
+
+    def __init__(self, hass: HomeAssistant, memory: MemoryStorage) -> None:
+        """Initialize with memory storage."""
+        super().__init__(hass)
+        self.memory = memory
+
+    @property
+    def name(self) -> str:
+        return "memory_list_keys"
+
+    @property
+    def description(self) -> str:
+        return "List all available memory keys"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
+
+    async def async_call(self, **kwargs) -> dict[str, Any]:
+        """List memory keys."""
+        keys = self.memory.list_keys()
+        
+        return {
+            "success": True,
+            "keys": keys,
+            "count": len(keys),
+        }
+
+
+def create_tool_registry(hass: HomeAssistant, memory: MemoryStorage) -> ToolRegistry:
+    """Create and populate the tool registry."""
+    registry = ToolRegistry()
+    
+    # Home Assistant core tools
+    registry.register(GetStateTool(hass))
+    registry.register(ListEntitiesTool(hass))
+    registry.register(CallServiceTool(hass))
+    
+    # Utility tools
+    registry.register(GetTimeTool(hass))
+    registry.register(GetDateTool(hass))
+    registry.register(GetDateTimeTool(hass))
+    
+    # Memory tools
+    registry.register(MemoryReadTool(hass, memory))
+    registry.register(MemoryWriteTool(hass, memory))
+    registry.register(MemoryListKeysTool(hass, memory))
+    
+    return registry

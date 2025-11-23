@@ -1,0 +1,54 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Llama.cpp Assist konfigurieren",
+                "description": "Verbinden Sie sich mit Ihrem lokalen llama.cpp Server",
+                "data": {
+                    "server_url": "Server-URL",
+                    "api_key": "API-Schlüssel (optional)",
+                    "model_name": "Modellname (optional)",
+                    "temperature": "Temperatur",
+                    "max_tokens": "Max. Tokens",
+                    "timeout": "Zeitüberschreitung (Sekunden)"
+                },
+                "data_description": {
+                    "server_url": "Die URL Ihres llama.cpp Servers (z.B. http://localhost:8080)",
+                    "api_key": "Optionaler API-Schlüssel, falls Ihr Server Authentifizierung benötigt",
+                    "model_name": "Optionaler Modellname für Anzeigezwecke",
+                    "temperature": "Steuert Zufälligkeit (0.0 = deterministisch, 2.0 = sehr kreativ)",
+                    "max_tokens": "Maximale Anzahl von Tokens in der Antwort",
+                    "timeout": "Zeitüberschreitung der Anfrage in Sekunden"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Verbindung zum llama.cpp Server fehlgeschlagen. Bitte überprüfen Sie die URL und stellen Sie sicher, dass der Server läuft.",
+            "invalid_response": "Der Server hat eine ungültige Antwort zurückgegeben. Bitte stellen Sie sicher, dass es sich um einen kompatiblen llama.cpp Server mit OpenAI API handelt.",
+            "timeout": "Zeitüberschreitung der Verbindung. Bitte überprüfen Sie Ihren Server und Ihr Netzwerk.",
+            "unknown": "Ein unerwarteter Fehler ist aufgetreten. Bitte überprüfen Sie die Protokolle für Details."
+        },
+        "abort": {
+            "already_configured": "Dieser llama.cpp Server ist bereits konfiguriert."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Llama.cpp Assist Konfiguration aktualisieren",
+                "data": {
+                    "temperature": "Temperatur",
+                    "max_tokens": "Max. Tokens",
+                    "timeout": "Zeitüberschreitung (Sekunden)",
+                    "system_prompt_prefix": "System-Prompt-Präfix"
+                },
+                "data_description": {
+                    "temperature": "Steuert Zufälligkeit (0.0 = deterministisch, 2.0 = sehr kreativ)",
+                    "max_tokens": "Maximale Anzahl von Tokens in der Antwort",
+                    "timeout": "Zeitüberschreitung der Anfrage in Sekunden",
+                    "system_prompt_prefix": "Benutzerdefinierter Text, der dem System-Prompt vorangestellt wird"
+                }
+            }
+        }
+    }
+}

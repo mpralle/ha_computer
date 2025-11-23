@@ -1,0 +1,12 @@
+{
+  "domain": "llamacpp_assist",
+  "name": "Llama.cpp Assist",
+  "codeowners": ["@malte"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/malte/ha_computer",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/malte/ha_computer/issues",
+  "requirements": ["aiohttp>=3.9.0"],
+  "version": "0.1.0"
+}

@@ -1,0 +1,54 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Configure Llama.cpp Assist",
+                "description": "Connect to your local llama.cpp server",
+                "data": {
+                    "server_url": "Server URL",
+                    "api_key": "API Key (optional)",
+                    "model_name": "Model Name (optional)",
+                    "temperature": "Temperature",
+                    "max_tokens": "Max Tokens",
+                    "timeout": "Timeout (seconds)"
+                },
+                "data_description": {
+                    "server_url": "The URL of your llama.cpp server (e.g., http://localhost:8080)",
+                    "api_key": "Optional API key if your server requires authentication",
+                    "model_name": "Optional model name for display purposes",
+                    "temperature": "Controls randomness (0.0 = deterministic, 2.0 = very creative)",
+                    "max_tokens": "Maximum tokens in response",
+                    "timeout": "Request timeout in seconds"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to llama.cpp server. Please check the URL and ensure the server is running.",
+            "invalid_response": "Server returned an invalid response. Please ensure it's a compatible llama.cpp server with OpenAI API.",
+            "timeout": "Connection timeout. Please check your server and network.",
+            "unknown": "An unexpected error occurred. Please check logs for details."
+        },
+        "abort": {
+            "already_configured": "This llama.cpp server is already configured."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Update Llama.cpp Assist Configuration",
+                "data": {
+                    "temperature": "Temperature",
+                    "max_tokens": "Max Tokens",
+                    "timeout": "Timeout (seconds)",
+                    "system_prompt_prefix": "System Prompt Prefix"
+                },
+                "data_description": {
+                    "temperature": "Controls randomness (0.0 = deterministic, 2.0 = very creative)",
+                    "max_tokens": "Maximum tokens in response",
+                    "timeout": "Request timeout in seconds",
+                    "system_prompt_prefix": "Custom text to prepend to the system prompt"
+                }
+            }
+        }
+    }
+}
