@@ -102,11 +102,20 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
         timeout = options.get(CONF_TIMEOUT, config.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
         system_prompt_prefix = options.get(CONF_SYSTEM_PROMPT_PREFIX)
         
+        # Get tool schemas
+        tool_schemas = self.tool_registry.get_all_schemas()
+        
+        # Detect if we should use Hermes format (for Hermes models)
+        # You can make this configurable later
+        use_hermes = True  # Enable Hermes format for better tool calling
+        
         # Generate system prompt
         system_prompt = generate_system_prompt(
             self.hass,
             self.memory,
             custom_prefix=system_prompt_prefix,
+            use_hermes_format=use_hermes,
+            tool_schemas=tool_schemas if use_hermes else None,
         )
         
         # Build messages
@@ -119,9 +128,6 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
         if user_input.conversation_id:
             # TODO: Load conversation history from storage
             pass
-        
-        # Get tool schemas
-        tool_schemas = self.tool_registry.get_all_schemas()
         
         # Call LLM with tool calling loop
         try:
@@ -323,57 +329,148 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
     def _parse_text_tool_calls(self, content: str) -> list[dict[str, Any]]:
         """Parse text-based tool calls from LLM response.
         
-        Expected format:
-        <TOOL_CALL>
-        tool_name(arg1="value1", arg2="value2")
-        </TOOL_CALL>
+        Supports multiple formats:
+        1. <tool_call>{"name": "function_name", "arguments": {...}}</tool_call> (Hermes-3)
+        2. <TOOL_CALL>tool_name(arg1="value1")</TOOL_CALL>
+        3. ```homeassistant\n{"service": "light.turn_off", "target_device": "light.kitchen"}\n```
+        4. ```python\n{"service": "light.turn_off", "target_device": "light.kitchen"}\n```
         """
         import re
         
         tool_calls = []
         
-        # Find all TOOL_CALL blocks
+        _LOGGER.debug("Parsing response for tool calls. Content length: %d chars", len(content))
+        _LOGGER.debug("Response content: %s", content[:500])  # First 500 chars for debugging
+        
+        # Format 1: Hermes-3 <tool_call> blocks (lowercase with JSON)
+        hermes_pattern = r"<tool_call>(.*?)</tool_call>"
+        hermes_matches = re.findall(hermes_pattern, content, re.DOTALL | re.IGNORECASE)
+        
+        if hermes_matches:
+            _LOGGER.debug("Found %d Hermes <tool_call> blocks", len(hermes_matches))
+            for match in hermes_matches:
+                match = match.strip()
+                _LOGGER.debug("Parsing Hermes tool call: %s", match)
+                
+                try:
+                    # Parse as JSON
+                    data = json.loads(match)
+                    tool_name = data.get("name")
+                    arguments = data.get("arguments", {})
+                    
+                    if not tool_name:
+                        _LOGGER.warning("Hermes tool call missing 'name' field: %s", match)
+                        continue
+                    
+                    tool_calls.append({
+                        "name": tool_name,
+                        "arguments": arguments,
+                    })
+                    
+                    _LOGGER.info("Parsed Hermes format: %s with args %s", tool_name, arguments)
+                    
+                except json.JSONDecodeError as err:
+                    _LOGGER.warning("Failed to parse Hermes tool call as JSON: %s. Error: %s", match, err)
+                    continue
+        
+        # Format 2: <TOOL_CALL> blocks (uppercase with function call syntax)
         pattern = r"<TOOL_CALL>(.*?)</TOOL_CALL>"
         matches = re.findall(pattern, content, re.DOTALL)
         
-        for match in matches:
-            match = match.strip()
-            
-            # Parse tool_name(arg1=value1, arg2=value2)
-            # Match tool name
-            tool_match = re.match(r"(\w+)\((.*)\)", match, re.DOTALL)
-            if not tool_match:
-                _LOGGER.warning("Could not parse tool call: %s", match)
-                continue
-            
-            tool_name = tool_match.group(1)
-            args_str = tool_match.group(2).strip()
-            
-            # Parse arguments
-            arguments = {}
-            if args_str:
-                # Simple parser for key=value pairs
-                # Handle quoted strings and basic values
-                arg_pattern = r'(\w+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^,\s]+))'
-                for arg_match in re.finditer(arg_pattern, args_str):
-                    key = arg_match.group(1)
-                    # Get the value from whichever group matched (quoted or unquoted)
-                    value = arg_match.group(2) or arg_match.group(3) or arg_match.group(4)
+        if matches:
+            _LOGGER.debug("Found %d <TOOL_CALL> blocks", len(matches))
+            for match in matches:
+                match = match.strip()
+                
+                # Parse tool_name(arg1=value1, arg2=value2)
+                tool_match = re.match(r"(\w+)\((.*)\)", match, re.DOTALL)
+                if not tool_match:
+                    _LOGGER.warning("Could not parse tool call: %s", match)
+                    continue
+                
+                tool_name = tool_match.group(1)
+                args_str = tool_match.group(2).strip()
+                
+                # Parse arguments
+                arguments = {}
+                if args_str:
+                    arg_pattern = r'(\w+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^,\s]+))'
+                    for arg_match in re.finditer(arg_pattern, args_str):
+                        key = arg_match.group(1)
+                        value = arg_match.group(2) or arg_match.group(3) or arg_match.group(4)
+                        
+                        if value and (value.startswith("{") or value.startswith("[")):
+                            try:
+                                value = json.loads(value)
+                            except:
+                                pass
+                        
+                        arguments[key] = value
+                
+                tool_calls.append({
+                    "name": tool_name,
+                    "arguments": arguments,
+                })
+                
+                _LOGGER.info("Parsed <TOOL_CALL> format: %s with args %s", tool_name, arguments)
+        
+        # Format 2 & 3: Markdown code blocks (```homeassistant, ```python, ```json)
+        code_block_pattern = r"```(?:homeassistant|python|json)\s*\n(.*?)\n```"
+        code_matches = re.findall(code_block_pattern, content, re.DOTALL)
+        
+        if code_matches:
+            _LOGGER.debug("Found %d markdown code blocks", len(code_matches))
+            for code_block in code_matches:
+                code_block = code_block.strip()
+                _LOGGER.debug("Parsing code block: %s", code_block)
+                
+                try:
+                    # Try to parse as JSON
+                    data = json.loads(code_block)
                     
-                    # Try to parse as JSON/Python literal for dicts/lists
-                    if value and (value.startswith("{") or value.startswith("[")):
-                        try:
-                            value = json.loads(value)
-                        except:
-                            pass
+                    # Extract service and target_device
+                    service = data.get("service", "")
+                    target_device = data.get("target_device", "")
                     
-                    arguments[key] = value
-            
-            tool_calls.append({
-                "name": tool_name,
-                "arguments": arguments,
-            })
-            
-            _LOGGER.debug("Parsed text tool call: %s with args %s", tool_name, arguments)
+                    if not service:
+                        _LOGGER.warning("Code block missing 'service' field: %s", code_block)
+                        continue
+                    
+                    # Parse service into domain and service name
+                    if "." in service:
+                        domain, service_name = service.split(".", 1)
+                    else:
+                        _LOGGER.warning("Invalid service format (should be domain.service): %s", service)
+                        continue
+                    
+                    # Build call_service arguments
+                    arguments = {
+                        "domain": domain,
+                        "service": service_name,
+                    }
+                    
+                    if target_device:
+                        arguments["entity_id"] = target_device
+                    
+                    # Add any extra data fields
+                    extra_data = {k: v for k, v in data.items() if k not in ["service", "target_device"]}
+                    if extra_data:
+                        arguments["data"] = extra_data
+                    
+                    tool_calls.append({
+                        "name": "call_service",
+                        "arguments": arguments,
+                    })
+                    
+                    _LOGGER.info("Parsed code block format: call_service with args %s", arguments)
+                    
+                except json.JSONDecodeError as err:
+                    _LOGGER.warning("Failed to parse code block as JSON: %s. Error: %s", code_block, err)
+                    continue
+        
+        if not tool_calls:
+            _LOGGER.debug("No tool calls found in response")
+        else:
+            _LOGGER.info("Total tool calls parsed: %d", len(tool_calls))
         
         return tool_calls

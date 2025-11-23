@@ -19,6 +19,8 @@ def generate_system_prompt(
     memory: MemoryStorage,
     custom_prefix: str | None = None,
     max_entities: int = 50,
+    use_hermes_format: bool = False,
+    tool_schemas: list[dict] | None = None,
 ) -> str:
     """Generate a dynamic system prompt with current context.
     
@@ -27,10 +29,15 @@ def generate_system_prompt(
         memory: Memory storage instance
         custom_prefix: Optional custom text to prepend
         max_entities: Maximum number of entities to include
+        use_hermes_format: Use Hermes-3 function calling format
+        tool_schemas: Tool schemas for Hermes format
         
     Returns:
         Formatted system prompt string
     """
+    if use_hermes_format and tool_schemas:
+        return _generate_hermes_system_prompt(hass, memory, custom_prefix, max_entities, tool_schemas)
+    
     lines = []
     
     # Custom prefix if provided
@@ -126,6 +133,61 @@ def generate_system_prompt(
     return "\n".join(lines)
 
 
+def _generate_hermes_system_prompt(
+    hass: HomeAssistant,
+    memory: MemoryStorage,
+    custom_prefix: str | None,
+    max_entities: int,
+    tool_schemas: list[dict],
+) -> str:
+    """Generate system prompt in Hermes-3 format with tool definitions."""
+    import json
+    
+    lines = []
+    
+    # Custom prefix if provided
+    if custom_prefix:
+        lines.append(custom_prefix)
+        lines.append("")
+    
+    lines.append("You are a function calling AI model for a smart home powered by Home Assistant.")
+    lines.append("You are provided with function signatures within <tools></tools> XML tags.")
+    lines.append("You may call one or more functions to assist with the user request.")
+    lines.append("For each function call, return a JSON object with function name and arguments within <tool_call></tool_call> XML tags.")
+    lines.append("")
+    
+    # Current time and date
+    now = datetime.now()
+    lines.append(f"Current date and time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"Day of week: {now.strftime('%A')}")
+    lines.append("")
+    
+    # Memory context
+    memory_context = memory.get_context_summary()
+    if memory_context and memory_context != "No memory stored yet.":
+        lines.append("# Memory Context")
+        lines.append(memory_context)
+        lines.append("")
+    
+    # Available entities
+    entity_lines = _generate_entity_list(hass, max_entities)
+    if entity_lines:
+        lines.append("# Available Devices and Entities")
+        lines.extend(entity_lines)
+        lines.append("")
+    
+    # Add tool schemas
+    lines.append("<tools>")
+    for schema in tool_schemas:
+        if "function" in schema:
+            lines.append(json.dumps(schema["function"]))
+    lines.append("</tools>")
+    lines.append("")
+    lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
+    
+    return "\n".join(lines)
+
+
 def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:
     """Generate a formatted list of available entities."""
     lines = []
@@ -139,22 +201,25 @@ def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:
         states = hass.states.async_all()
         
         # Group entities by domain
-        entities_by_domain: dict[str, list[tuple[str, str, str]]] = {}
+        entities_by_domain: dict[str, list[tuple[str, str, str, str]]] = {}
         
         for state in states:
             entity_id = state.entity_id
             domain = entity_id.split(".")[0]
             
-            # Skip certain domains
-            if domain in ["group", "zone", "automation", "script", "sensor"]:
+            # Skip certain domains but INCLUDE sensors for temperature, etc.
+            if domain in ["group", "zone", "automation", "script", "update", "binary_sensor"]:
                 continue
             
             # Get friendly name
             friendly_name = state.attributes.get("friendly_name", entity_id)
             
+            # Get current state
+            current_state = state.state
+            
             # Get area
             entity_entry = ent_reg.async_get(entity_id)
-            area_name = "Unknown"
+            area_name = ""
             if entity_entry and entity_entry.area_id:
                 area_entry = area_reg.async_get_area(entity_entry.area_id)
                 if area_entry:
@@ -163,26 +228,49 @@ def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:
             if domain not in entities_by_domain:
                 entities_by_domain[domain] = []
             
-            entities_by_domain[domain].append((entity_id, friendly_name, area_name))
+            entities_by_domain[domain].append((entity_id, friendly_name, area_name, current_state))
         
-        # Sort and limit
+        # Sort and limit - prioritize important domains
+        priority_domains = ["light", "switch", "climate", "media_player", "cover", "fan"]
         total_count = 0
+        
+        # Show priority domains first
+        for domain in priority_domains:
+            if domain in entities_by_domain and total_count < max_entities:
+                entities = entities_by_domain[domain][:15]  # Max 15 per domain
+                
+                lines.append(f"\n**{domain.title()}:**")
+                for entity_id, friendly_name, area_name, current_state in entities:
+                    area_text = f" [{area_name}]" if area_name else ""
+                    state_text = f" (currently: {current_state})" if current_state not in ["unknown", "unavailable"] else ""
+                    lines.append(f"- **{friendly_name}**{area_text}: `{entity_id}`{state_text}")
+                    total_count += 1
+                    
+                    if total_count >= max_entities:
+                        break
+        
+        # Show other domains
         for domain in sorted(entities_by_domain.keys()):
-            entities = entities_by_domain[domain][:10]  # Max 10 per domain
+            if domain in priority_domains or total_count >= max_entities:
+                continue
             
-            if total_count >= max_entities:
-                break
+            entities = entities_by_domain[domain][:10]  # Max 10 for other domains
             
             lines.append(f"\n**{domain.title()}:**")
-            for entity_id, friendly_name, area_name in entities:
-                lines.append(f"- {entity_id} ({friendly_name}) - {area_name}")
+            for entity_id, friendly_name, area_name, current_state in entities:
+                area_text = f" [{area_name}]" if area_name else ""
+                state_text = f" (currently: {current_state})" if current_state not in ["unknown", "unavailable"] else ""
+                lines.append(f"- **{friendly_name}**{area_text}: `{entity_id}`{state_text}")
                 total_count += 1
                 
                 if total_count >= max_entities:
                     break
         
         if total_count >= max_entities:
-            lines.append(f"\n(Showing {total_count} of {sum(len(e) for e in entities_by_domain.values())} total entities)")
+            lines.append(f"\n_(Showing {total_count} of {sum(len(e) for e in entities_by_domain.values())} total entities)_")
+        
+        # Add helpful note
+        lines.append("\n**Important:** Use the exact `entity_id` (in backticks) when calling services, not the friendly name.")
     
     except Exception as err:
         _LOGGER.error("Failed to generate entity list: %s", err)
