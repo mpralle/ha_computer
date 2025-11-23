@@ -251,6 +251,12 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
             message = choice.get("message", {})
             content = message.get("content", "")
             
+            # Ensure content is a string
+            if content is None:
+                content = ""
+            elif not isinstance(content, str):
+                content = str(content)
+            
             # Check for OpenAI-style tool calls first
             tool_calls = message.get("tool_calls", [])
             
@@ -269,8 +275,12 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
                     return content[start:end].strip()
                 return content or "I don't have a response."
             
-            # Add assistant message to history
-            current_messages.append({"role": "assistant", "content": content})
+            # Add assistant message to history (ensure content is not empty)
+            if content.strip():
+                current_messages.append({"role": "assistant", "content": content})
+            else:
+                # If assistant didn't provide text, just note the tool call
+                current_messages.append({"role": "assistant", "content": "Using tools to help with your request..."})
             
             # Execute tool calls
             _LOGGER.debug("Executing %d tool calls", len(tool_calls))
@@ -315,11 +325,14 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
                     })
                     tool_results.append(f"{tool_name}: {result_str}")
             
-            # Add tool results to messages
+            # Add tool results to messages - ensure it's a proper string
+            results_text = "Tool results:\n" + "\n".join(tool_results)
             current_messages.append({
                 "role": "user",
-                "content": f"Tool results:\n" + "\n".join(tool_results),
+                "content": results_text,
             })
+            
+            _LOGGER.debug("Tool results added to conversation: %s", results_text[:200])
             
             # Continue loop to get final response
         
