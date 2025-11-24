@@ -68,6 +68,11 @@ def generate_hermes_system_prompt(
     lines.append("</tools>")
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
+    lines.append("When you decide to call a tool, respond with ONLY a single <tool_call>...</tool_call> block.")
+    lines.append("Inside <tool_call>, output a single JSON object with keys 'name' and 'arguments', and nothing else.")
+    lines.append("Do NOT add explanations, natural language, or extra text outside <tool_call> when calling tools.")
+
+
     
     return "\n".join(lines)
 
