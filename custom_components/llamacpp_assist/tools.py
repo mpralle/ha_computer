@@ -6,6 +6,7 @@ from datetime import datetime
 import logging
 from typing import Any, TYPE_CHECKING
 
+from custom_components.llamacpp_assist.describe_service import DescribeServiceTool
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -208,15 +209,25 @@ class CallServiceTool(Tool):
             "properties": {
                 "domain": {
                     "type": "string",
-                    "description": "Service domain (e.g., 'light', 'switch', 'climate')",
+                    "description": (
+                        "Service domain (e.g., 'light', 'switch', 'climate'). "
+                        "Use the SAME domain as in the target entity_id (e.g. 'light' for light.xxx)."
+                    ),
                 },
                 "service": {
                     "type": "string",
-                    "description": "Service name (e.g., 'turn_on', 'turn_off', 'set_temperature')",
+                    "description": (
+                        "Service name (e.g., 'turn_on', 'turn_off', 'set_temperature'). "
+                        "If you are unsure about the fields for a service, FIRST call 'describe_service'."
+                    ),
                 },
                 "entity_id": {
                     "type": "string",
-                    "description": "Target entity ID (optional if using area or device)",
+                    "description": (
+                        "Single target entity ID. "
+                        "NEVER pass multiple entities separated by commas. "
+                        "To control multiple devices, call this tool multiple times, one per entity."
+                    ),
                 },
                 "data": {
                     "type": "object",
@@ -225,6 +236,7 @@ class CallServiceTool(Tool):
             },
             "required": ["domain", "service"],
         }
+
 
     async def async_call(
         self,
@@ -477,6 +489,7 @@ def create_tool_registry(hass: HomeAssistant, memory: MemoryStorage) -> ToolRegi
     registry.register(GetStateTool(hass))
     registry.register(ListEntitiesTool(hass))
     registry.register(CallServiceTool(hass))
+    registry.register(DescribeServiceTool(hass))
     
     # Utility tools
     registry.register(GetTimeTool(hass))

@@ -115,6 +115,11 @@ def generate_hermes_system_prompt(
         "'cheese and wine' or 'living room and kitchen lights'."
     )
     lines.append(
+        "3b. For call_service, the 'entity_id' MUST be a single entity_id string, "
+        "never a comma-separated list. To control multiple devices, call call_service "
+        "multiple times, once per entity."
+    )
+    lines.append(
         "4. When you call tools, your entire response MUST consist only of one or more "
         "<tool_call>...</tool_call> blocks."
     )
@@ -138,9 +143,25 @@ def generate_hermes_system_prompt(
         "In such cases you MUST use device tools like 'call_service' and, if necessary, "
         "'list_entities', and you MUST NOT call any shopping_list_* tools."
     )
+    lines.append(
+        "8. When the user refers to a device by a natural-language name "
+        "(e.g. 'Schrank', 'Schranklampe', 'Wohnzimmerlampe'), you MUST NOT invent entity_ids. "
+        "Instead, FIRST call 'list_entities' with an appropriate domain (typically 'light' or 'switch'), "
+        "then select the matching entities by comparing the 'friendly_name' field. "
+        "After that, call 'call_service' once per matched entity_id."
+    )
+    lines.append(
+        "   Do NOT translate German names into English when matching. "
+        "Always use the exact entity_ids from 'list_entities' or the '# Available Devices and Entities' section above."
+    )
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
     lines.append("")
+    lines.append(
+        "If you are unsure how to call a Home Assistant service or which fields are required, "
+        "FIRST call the 'describe_service' tool for that domain and service, then use the result "
+        "to build a correct 'call_service' invocation."
+    )
 
     # --- Positive & negative EXAMPLES ---
     lines.append("# EXAMPLES")
@@ -189,6 +210,25 @@ def generate_hermes_system_prompt(
     lines.append(
         '{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", '
         '"entity_id": "light.kitchen"}}'
+    )
+    lines.append("</tool_call>")
+    lines.append("")
+        # German device control, multiple lights via list_entities
+    lines.append("User: Schalte Schrank und Schranklampe an")
+    lines.append("# Correct behaviour: first discover lights, then turn on the matching ones.")
+    lines.append("<tool_call>")
+    lines.append('{"name": "list_entities", "arguments": {"domain": "light"}}')
+    lines.append("</tool_call>")
+    lines.append("<tool_call>")
+    lines.append(
+        '{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", '
+        '"entity_id": "light.schrank"}}'
+    )
+    lines.append("</tool_call>")
+    lines.append("<tool_call>")
+    lines.append(
+        '{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", '
+        '"entity_id": "light.schranklampe"}}'
     )
     lines.append("</tool_call>")
     lines.append("")
