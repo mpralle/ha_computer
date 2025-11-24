@@ -7,6 +7,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from homeassistant.components import calendar as calendar_component
 
 from .tools import Tool
 
@@ -57,6 +58,11 @@ class CalendarListEventsTool(Tool):
             # Parse dates
             start_dt = self._parse_date(start) if start else datetime.now()
             end_dt = self._parse_date(end) if end else start_dt + timedelta(days=7)
+
+            # Handle case where start and end are the same (e.g. "tomorrow" to "tomorrow")
+            # This usually implies "during that day", so we extend end by 24h
+            if start_dt == end_dt:
+                end_dt += timedelta(days=1)
             
             # Get calendar entities
             calendar_entities = []
@@ -201,11 +207,11 @@ class CalendarListEventsTool(Tool):
         # Handle relative dates
         now = datetime.now()
         
-        if date_str.lower() == "today":
+        if date_str.lower() in ("today", "heute"):
             return now.replace(hour=0, minute=0, second=0, microsecond=0)
-        elif date_str.lower() == "tomorrow":
+        elif date_str.lower() in ("tomorrow", "morgen"):
             return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        elif date_str.lower() == "yesterday":
+        elif date_str.lower() in ("yesterday", "gestern"):
             return (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Try to parse ISO format
