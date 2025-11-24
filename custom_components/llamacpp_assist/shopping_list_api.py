@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -39,16 +40,39 @@ class ShoppingAddItemTool(Tool):
     async def async_call(self, item: str, **kwargs) -> dict[str, Any]:
         """Add item to shopping list."""
         try:
-            await self.hass.services.async_call(
-                "shopping_list",
-                "add_item",
-                {"name": item},
-                blocking=True,
-            )
+            # Be forgiving: split on common separators like commas, "and", "und"
+            # Examples:
+            #   "käse und wein" -> ["käse", "wein"]
+            #   "milk, eggs, bread" -> ["milk", "eggs", "bread"]
+            #   "milk and eggs" -> ["milk", "eggs"]
+            items = re.split(r',|\s+(?:and|und)\s+', item)
+            items = [i.strip() for i in items if i.strip()]
+            
+            if not items:
+                return {
+                    "success": False,
+                    "error": "No valid items to add",
+                }
+            
+            # Add each item separately
+            added_items = []
+            for single_item in items:
+                await self.hass.services.async_call(
+                    "shopping_list",
+                    "add_item",
+                    {"name": single_item},
+                    blocking=True,
+                )
+                added_items.append(single_item)
+            
+            if len(added_items) == 1:
+                message = f"Added '{added_items[0]}' to shopping list"
+            else:
+                message = f"Added {len(added_items)} items to shopping list: {', '.join(added_items)}"
             
             return {
                 "success": True,
-                "message": f"Added '{item}' to shopping list",
+                "message": message,
             }
             
         except Exception as err:
