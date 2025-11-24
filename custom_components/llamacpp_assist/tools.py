@@ -8,6 +8,7 @@ from typing import Any, TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+import re
 
 if TYPE_CHECKING:
     from .memory import MemoryStorage
