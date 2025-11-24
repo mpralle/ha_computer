@@ -279,9 +279,10 @@ class CallServiceTool(Tool):
                 "entity_id": {
                     "type": "string",
                     "description": (
-                        "Single target entity ID. "
-                        "NEVER pass multiple entities separated by commas. "
-                        "To control multiple devices, call this tool multiple times, one per entity."
+                        "Target entity ID. "
+                        "You SHOULD pass a single entity_id. "
+                        "If you accidentally pass multiple IDs separated by commas or whitespace, "
+                        "the tool will split them into a list."
                     ),
                 },
                 "data": {
@@ -291,7 +292,6 @@ class CallServiceTool(Tool):
             },
             "required": ["domain", "service"],
         }
-
 
     async def async_call(
         self,
@@ -303,28 +303,40 @@ class CallServiceTool(Tool):
     ) -> dict[str, Any]:
         """Call a service."""
         try:
-            service_data = data or {}
+            service_data: dict[str, Any] = data or {}
+
             if entity_id:
-                service_data["entity_id"] = entity_id
-            
+                # Be forgiving: support comma/whitespace separated lists of entity_ids
+                # Examples:
+                #   "light.a,light.b"
+                #   "light.a, light.b"
+                #   "light.a light.b"
+                parts = [p.strip() for p in re.split(r"[,\s]+", entity_id) if p.strip()]
+
+                if len(parts) == 1:
+                    service_data["entity_id"] = parts[0]
+                elif len(parts) > 1:
+                    service_data["entity_id"] = parts
+
             await self.hass.services.async_call(
                 domain,
                 service,
                 service_data,
                 blocking=True,
             )
-            
+
             return {
                 "success": True,
                 "message": f"Called {domain}.{service}",
             }
-            
+
         except Exception as err:
             _LOGGER.error("Service call failed: %s", err)
             return {
                 "success": False,
                 "error": str(err),
             }
+
 
 
 # === Utility Tools ===
