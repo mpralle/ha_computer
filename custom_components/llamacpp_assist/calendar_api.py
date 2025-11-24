@@ -121,7 +121,7 @@ class CalendarListEventsTool(Tool):
         # --- 1) Preferred: use the calendar helper API ---
         try:
             # async_get_events is the canonical API used by calendar platforms
-            events = await calendar_component.async_get_events(
+            events = await calendar_component.get_events(
                 self.hass,
                 entity_id,
                 start,
