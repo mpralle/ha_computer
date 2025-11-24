@@ -43,8 +43,10 @@ def generate_hermes_system_prompt(
     lines.append("You may call one or more functions to assist with the user request.")
     lines.append("For each function call, return a JSON object with function name and arguments within <tool_call></tool_call> XML tags.")
     lines.append("")
-    lines.append("Tools are always designed to handle atomic tasks; if you receive a list of items, call the tool multiple times, once per item.")
-    lines.append("For example, to add items to a shopping list, call the 'shopping_add_item' tool once per item. To turn on multiple lights, execute the tool once per light.")
+    lines.append("Tools are always designed to handle ATOMIC tasks.")
+    lines.append("If the user gives you a LIST of items or devices, you MUST perform MULTIPLE tool calls, one per item/device.")
+    lines.append("You MUST NEVER pass multiple items or devices inside a single argument like 'cheese and wine' or 'light1, light2'.")
+    lines.append("Instead, you MUST emit multiple <tool_call> blocks, one for each atomic item/device.")
     lines.append("Make sure to use the tooling for date and time, if there is anything related to scheduling or time.")
     lines.append("")
 
@@ -106,11 +108,14 @@ def generate_hermes_system_prompt(
         "   Do NOT say things like 'I turned on the light' or 'I added it to your shopping list'. "
         "Instead, ALWAYS call the appropriate tool."
     )
-    lines.append("3. Tools are atomic:")
-    lines.append("   - One tool call handles exactly one item or one device or one event.")
+    lines.append("3. Tools are STRICTLY ATOMIC:")
+    lines.append("   - ONE tool call handles exactly ONE item or ONE device or ONE event.")
     lines.append(
-        "   - If the user mentions multiple items or devices, you MUST emit MULTIPLE "
-        "<tool_call> blocks, one per item/device."
+        "   - If the user mentions N items/devices, you MUST emit EXACTLY N <tool_call> blocks."
+    )
+    lines.append(
+        "   - You MUST NOT put multiple items/devices inside a single argument string like "
+        "'cheese and wine' or 'living room and kitchen lights'."
     )
     lines.append(
         "4. When you call tools, your entire response MUST consist only of one or more "
@@ -128,15 +133,22 @@ def generate_hermes_system_prompt(
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
     lines.append("")
 
-    # --- Examples ---
+    # --- Positive & negative EXAMPLES ---
     lines.append("# EXAMPLES")
     lines.append("")
+    # Simple single-item shopping
     lines.append("User: put cheese on the shopping list")
     lines.append("<tool_call>")
     lines.append('{"name": "shopping_add_item", "arguments": {"name": "cheese"}}')
     lines.append("</tool_call>")
     lines.append("")
+    # Multi-item shopping list (2 items)
     lines.append("User: put cheese and wine on the shopping list")
+    lines.append("# WRONG (do NOT do this):")
+    lines.append("# <tool_call>")
+    lines.append('# {"name": "shopping_add_item", "arguments": {"name": "cheese and wine"}}')
+    lines.append("# </tool_call>")
+    lines.append("# CORRECT (ALWAYS do this instead):")
     lines.append("<tool_call>")
     lines.append('{"name": "shopping_add_item", "arguments": {"name": "cheese"}}')
     lines.append("</tool_call>")
@@ -144,19 +156,40 @@ def generate_hermes_system_prompt(
     lines.append('{"name": "shopping_add_item", "arguments": {"name": "wine"}}')
     lines.append("</tool_call>")
     lines.append("")
-    lines.append("User: turn on the living room light")
+    # Multi-item shopping list (3+ items)
+    lines.append("User: add bread, milk, and eggs to my shopping list")
+    lines.append("<tool_call>")
+    lines.append('{"name": "shopping_add_item", "arguments": {"name": "bread"}}')
+    lines.append("</tool_call>")
+    lines.append("<tool_call>")
+    lines.append('{"name": "shopping_add_item", "arguments": {"name": "milk"}}')
+    lines.append("</tool_call>")
+    lines.append("<tool_call>")
+    lines.append('{"name": "shopping_add_item", "arguments": {"name": "eggs"}}')
+    lines.append("</tool_call>")
+    lines.append("")
+    # Lights multi-device example
+    lines.append("User: turn on the living room and kitchen lights")
     lines.append("<tool_call>")
     lines.append(
         '{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", '
         '"entity_id": "light.living_room"}}'
     )
     lines.append("</tool_call>")
+    lines.append("<tool_call>")
+    lines.append(
+        '{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", '
+        '"entity_id": "light.kitchen"}}'
+    )
+    lines.append("</tool_call>")
     lines.append("")
+    # Calendar example
     lines.append("User: what did I plan for tomorrow?")
     lines.append("<tool_call>")
     lines.append('{"name": "calendar_list_events", "arguments": {"day": "tomorrow"}}')
     lines.append("</tool_call>")
     lines.append("")
+    # Pure text example
     lines.append("User: what day of the week is it today?")
     lines.append("<RESPONSE>")
     lines.append("Today is a specific day of the week. (Use the given current date and time to determine it.)")
@@ -168,6 +201,7 @@ def generate_hermes_system_prompt(
     )
 
     return "\n".join(lines)
+
 
 
 def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:
