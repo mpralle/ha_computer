@@ -181,32 +181,38 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
     ) -> str:
         """Call LLM with tool calling support."""
         session = async_get_clientsession(self.hass)
-        
+
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        
+
         iteration = 0
-        current_messages = messages.copy()
+        current_messages = list(messages)
         use_tools = True  # Try with tools first
-        
+
+        # Keep track of already executed tool calls to avoid duplicates
+        executed_tool_signatures: set[str] = set()
+
         while iteration < max_iterations:
             iteration += 1
-            
-            # Prepare request payload
-            payload = {
+
+            payload: dict[str, Any] = {
                 "messages": current_messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
-            
-            # Add tools if supported
+
+            # Add tools if supported and enabled
             if use_tools and tool_schemas:
                 payload["tools"] = tool_schemas
-            
-            _LOGGER.debug("Calling llama.cpp (iteration %d, tools=%s): %s", iteration, use_tools, server_url)
-            
-            # Make request
+
+            _LOGGER.debug(
+                "Calling llama.cpp (iteration %d, tools=%s): %s",
+                iteration,
+                use_tools,
+                server_url,
+            )
+
             try:
                 async with asyncio.timeout(timeout):
                     async with session.post(
@@ -216,125 +222,203 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
                     ) as response:
                         if response.status != 200:
                             error_text = await response.text()
-                            
-                            # Check if error is related to tools not being supported
-                            if use_tools and ("tools param requires" in error_text.lower() or 
-                                            "unknown method" in error_text.lower() or
-                                            "jinja" in error_text.lower()):
+
+                            # Detect tool support issues and fall back
+                            if use_tools and (
+                                "tools param requires" in error_text.lower()
+                                or "unknown method" in error_text.lower()
+                                or "jinja" in error_text.lower()
+                            ):
                                 _LOGGER.warning(
                                     "llama.cpp server doesn't support tools properly. "
                                     "Falling back to basic conversation mode. "
                                     "Update llama.cpp or use a model with tool support for device control."
                                 )
                                 use_tools = False
-                                iteration = 0  # Reset iteration counter
-                                current_messages = messages.copy()  # Reset messages
-                                continue  # Retry without tools
-                            
-                            raise ValueError(f"Server returned status {response.status}: {error_text}")
-                        
+                                iteration = 0
+                                current_messages = list(messages)
+                                continue
+
+                            raise ValueError(
+                                f"Server returned status {response.status}: {error_text}"
+                            )
+
                         data = await response.json()
             except asyncio.TimeoutError:
                 raise
             except Exception as err:
                 _LOGGER.error("Error calling llama.cpp: %s", err)
                 raise
-            
+
             # Extract response
             if "choices" not in data or not data["choices"]:
                 raise ValueError("Invalid response: no choices")
-            
+
             choice = data["choices"][0]
             message = choice.get("message", {})
             content = message.get("content", "")
-            
-            # Ensure content is a string
+
             if content is None:
                 content = ""
             elif not isinstance(content, str):
                 content = str(content)
-            
-            # Check for OpenAI-style tool calls first
+
             tool_calls = message.get("tool_calls", [])
-            
-            # If no OpenAI tool calls, try parsing text-based tool calls
+
+            # If no OpenAI-style tool calls, try parsing text-based ones
             if not tool_calls and content:
                 tool_calls = self._parse_text_tool_calls(content)
                 if tool_calls:
                     _LOGGER.debug("Parsed %d text-based tool calls", len(tool_calls))
-            
-            if not tool_calls:
-                # No tool calls, return the response
-                # Extract just the RESPONSE section if present
+
+            # If there are no tool calls, just return the text (optionally strip <RESPONSE> tags)
+            if not tool_calls or not use_tools:
                 if "<RESPONSE>" in content and "</RESPONSE>" in content:
                     start = content.index("<RESPONSE>") + len("<RESPONSE>")
                     end = content.index("</RESPONSE>")
                     return content[start:end].strip()
                 return content or "I don't have a response."
-            
-            # Add assistant message to history (ensure content is not empty)
+
+            # Add assistant message with whatever the model said
             if content.strip():
                 current_messages.append({"role": "assistant", "content": content})
             else:
-                # If assistant didn't provide text, just note the tool call
-                current_messages.append({"role": "assistant", "content": "Using tools to help with your request..."})
-            
-            # Execute tool calls
+                current_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": "Using tools to help with your request...",
+                    }
+                )
+
             _LOGGER.debug("Executing %d tool calls", len(tool_calls))
-            
-            tool_results = []
+
+            # --- NEW: filter out duplicate tool calls ---
+            def make_signature(name: str, args: Any) -> str:
+                try:
+                    # Make a stable string representation for deduplication
+                    if isinstance(args, str):
+                        parsed = json.loads(args)
+                    else:
+                        parsed = args
+                    return name + ":" + json.dumps(parsed, sort_keys=True)
+                except Exception:
+                    return name + ":" + str(args)
+
+            parsed_tool_calls: list[dict[str, Any]] = []
+
             for tool_call in tool_calls:
                 if isinstance(tool_call, dict) and "function" in tool_call:
                     # OpenAI-style tool call
                     tool_name = tool_call["function"]["name"]
                     tool_args_str = tool_call["function"]["arguments"]
-                    
                     try:
-                        tool_args = json.loads(tool_args_str) if isinstance(tool_args_str, str) else tool_args_str
+                        tool_args = (
+                            json.loads(tool_args_str)
+                            if isinstance(tool_args_str, str)
+                            else tool_args_str
+                        )
                     except json.JSONDecodeError:
                         tool_args = {}
                 else:
                     # Text-based tool call
                     tool_name = tool_call.get("name")
                     tool_args = tool_call.get("arguments", {})
-                
+
+                if not tool_name:
+                    _LOGGER.warning("Tool call without a name: %s", tool_call)
+                    continue
+
+                sig = make_signature(tool_name, tool_args)
+                if sig in executed_tool_signatures:
+                    _LOGGER.info(
+                        "Skipping duplicate tool call %s with args %s", tool_name, tool_args
+                    )
+                    continue
+
+                parsed_tool_calls.append(
+                    {
+                        "name": tool_name,
+                        "arguments": tool_args,
+                        "signature": sig,
+                    }
+                )
+
+            # If all requested tool calls were duplicates, stop tool mode and ask for summary
+            if not parsed_tool_calls:
+                _LOGGER.warning(
+                    "Model requested only duplicate tool calls. Disabling tools and asking for final answer."
+                )
+
+                use_tools = False
+                current_messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "You have already executed the requested actions (for example, "
+                            "adding items to the shopping list). Do not call any tools again. "
+                            "Instead, briefly explain to the user what you have already done."
+                        ),
+                    }
+                )
+                # Next loop iteration will run with tools disabled and return plain text
+                continue
+
+            # --- Execute non-duplicate tool calls ---
+            tool_results = []
+            for tc in parsed_tool_calls:
+                tool_name = tc["name"]
+                tool_args = tc["arguments"]
+                sig = tc["signature"]
+
                 _LOGGER.debug("Tool call: %s(%s)", tool_name, tool_args)
-                
-                # Execute tool
+
                 tool = self.tool_registry.get(tool_name)
                 if tool:
                     try:
                         result = await tool.async_call(**tool_args)
                         result_str = json.dumps(result)
                         tool_results.append(f"{tool_name}: {result_str}")
+                        executed_tool_signatures.add(sig)
                     except Exception as err:
                         _LOGGER.error("Tool execution failed: %s", err)
-                        result_str = json.dumps({
-                            "success": False,
-                            "error": str(err),
-                        })
+                        result_str = json.dumps(
+                            {
+                                "success": False,
+                                "error": str(err),
+                            }
+                        )
                         tool_results.append(f"{tool_name}: {result_str}")
+                        executed_tool_signatures.add(sig)
                 else:
                     _LOGGER.error("Tool not found: %s", tool_name)
-                    result_str = json.dumps({
-                        "success": False,
-                        "error": f"Tool {tool_name} not found",
-                    })
+                    result_str = json.dumps(
+                        {
+                            "success": False,
+                            "error": f"Tool {tool_name} not found",
+                        }
+                    )
                     tool_results.append(f"{tool_name}: {result_str}")
-            
-            # Add tool results to messages - ensure it's a proper string
+                    executed_tool_signatures.add(sig)
+
+            # Add tool results to messages
             results_text = "Tool results:\n" + "\n".join(tool_results)
-            current_messages.append({
-                "role": "user",
-                "content": results_text,
-            })
-            
-            _LOGGER.debug("Tool results added to conversation: %s", results_text[:200])
-            
-            # Continue loop to get final response
-        
+            current_messages.append(
+                {
+                    "role": "user",
+                    "content": results_text,
+                }
+            )
+
+            _LOGGER.debug(
+                "Tool results added to conversation: %s", results_text[:200]
+            )
+
+            # Loop again to let the model react (may call more, different tools,
+            # or just return a final user-facing message)
+
         # Max iterations reached
         return "I'm sorry, I couldn't complete the task after multiple attempts."
+
 
     def _parse_text_tool_calls(self, content: str) -> list[dict[str, Any]]:
         """Parse text-based tool calls from LLM response.
