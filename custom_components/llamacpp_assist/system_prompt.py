@@ -50,12 +50,32 @@ def generate_hermes_system_prompt(
     lines.append("Make sure to use the tooling for date and time, if there is anything related to scheduling or time.")
     lines.append("")
 
-    # --- Memory context ---
-    memory_context = memory.get_context_summary()
-    if memory_context and memory_context != "No memory stored yet.":
-        lines.append("# Memory Context")
-        lines.append(memory_context)
-        lines.append("")
+    # --- Current time and date ---
+    now = datetime.now()
+    lines.append(f"Current date and time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"Day of week: {now.strftime('%A')}")
+    lines.append("")
+
+    # --- Date interpretation rules ---
+    lines.append("DATE INTERPRETATION RULES:")
+    lines.append(
+        "Whenever the user mentions a calendar date without a year "
+        "(for example '29 April' or 'on the 29th of April'), "
+        "you MUST interpret it using the current year from the 'Current date and time' above, "
+        "unless the user explicitly specifies another year."
+    )
+    lines.append("Example:")
+    lines.append("  Current date and time: 2025-11-24 10:00:00")
+    lines.append("  User: What do I have planned for the 29th of April?")
+    lines.append("  -> Use 2025-04-29 when calling calendar tools.")
+    lines.append("")
+
+    # --- Memory context (optional, currently disabled to reduce context) ---
+    # memory_context = memory.get_context_summary()
+    # if memory_context and memory_context != "No memory stored yet.":
+    #     lines.append("# Memory Context")
+    #     lines.append(memory_context)
+    #     lines.append("")
 
     # --- Available entities ---
     entity_lines = _generate_entity_list(hass, max_entities)
@@ -106,6 +126,11 @@ def generate_hermes_system_prompt(
         "about theory), you may respond with natural language. In that case, wrap your answer in "
         "<RESPONSE>...</RESPONSE> tags."
     )
+    lines.append(
+        "6. For the shopping_add_item tool specifically, treat the 'item' argument as a SINGLE item name. "
+        "If the user text contains 'and' / 'und' or commas, you MUST split it into separate items and emit "
+        "one shopping_add_item tool call per item in the SAME response."
+    )
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
     lines.append("")
@@ -116,33 +141,33 @@ def generate_hermes_system_prompt(
     # Simple single-item shopping
     lines.append("User: put cheese on the shopping list")
     lines.append("<tool_call>")
-    lines.append('{"name": "shopping_add_item", "arguments": {"name": "cheese"}}')
+    lines.append('{"name": "shopping_add_item", "arguments": {"item": "cheese"}}')
     lines.append("</tool_call>")
     lines.append("")
-    # Multi-item shopping list (2 items)
-    lines.append("User: put cheese and wine on the shopping list")
+    # Multi-item shopping list (2 items) – exactly your use case
+    lines.append("User: add cheese and wine to my shopping list")
     lines.append("# WRONG (do NOT do this):")
     lines.append("# <tool_call>")
-    lines.append('# {"name": "shopping_add_item", "arguments": {"name": "cheese and wine"}}')
+    lines.append('# {"name": "shopping_add_item", "arguments": {"item": "cheese and wine"}}')
     lines.append("# </tool_call>")
     lines.append("# CORRECT (ALWAYS do this instead):")
     lines.append("<tool_call>")
-    lines.append('{"name": "shopping_add_item", "arguments": {"name": "cheese"}}')
+    lines.append('{"name": "shopping_add_item", "arguments": {"item": "cheese"}}')
     lines.append("</tool_call>")
     lines.append("<tool_call>")
-    lines.append('{"name": "shopping_add_item", "arguments": {"name": "wine"}}')
+    lines.append('{"name": "shopping_add_item", "arguments": {"item": "wine"}}')
     lines.append("</tool_call>")
     lines.append("")
     # Multi-item shopping list (3+ items)
     lines.append("User: add bread, milk, and eggs to my shopping list")
     lines.append("<tool_call>")
-    lines.append('{"name": "shopping_add_item", "arguments": {"name": "bread"}}')
+    lines.append('{"name": "shopping_add_item", "arguments": {"item": "bread"}}')
     lines.append("</tool_call>")
     lines.append("<tool_call>")
-    lines.append('{"name": "shopping_add_item", "arguments": {"name": "milk"}}')
+    lines.append('{"name": "shopping_add_item", "arguments": {"item": "milk"}}')
     lines.append("</tool_call>")
     lines.append("<tool_call>")
-    lines.append('{"name": "shopping_add_item", "arguments": {"name": "eggs"}}')
+    lines.append('{"name": "shopping_add_item", "arguments": {"item": "eggs"}}')
     lines.append("</tool_call>")
     lines.append("")
     # Lights multi-device example
@@ -177,27 +202,8 @@ def generate_hermes_system_prompt(
         "with a single JSON object inside each <tool_call> containing the keys 'name' and 'arguments'."
     )
 
-    # --- Current time and date ---
-    now = datetime.now()
-    lines.append(f"Current date and time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"Day of week: {now.strftime('%A')}")
-    lines.append("")
-
-    # --- Date interpretation rules ---
-    lines.append("DATE INTERPRETATION RULES:")
-    lines.append(
-        "Whenever the user mentions a calendar date without a year "
-        "(for example '29 April' or 'on the 29th of April'), "
-        "you MUST interpret it using the current year from the 'Current date and time' above, "
-        "unless the user explicitly specifies another year."
-    )
-    lines.append("Example:")
-    lines.append("  Current date and time: 2025-11-24 10:00:00")
-    lines.append("  User: What do I have planned for the 29th of April?")
-    lines.append("  -> Use 2025-04-29 when calling calendar tools.")
-    lines.append("")
-
     return "\n".join(lines)
+
 
 
 
