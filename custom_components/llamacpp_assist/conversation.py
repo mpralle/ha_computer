@@ -271,13 +271,17 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
                 if tool_calls:
                     _LOGGER.debug("Parsed %d text-based tool calls", len(tool_calls))
 
-            # If there are no tool calls, just return the text (optionally strip <RESPONSE> tags)
-            if not tool_calls or not use_tools:
+                        # If there are no tool calls at all, just return the text
+            # (optionally strip <RESPONSE> tags). We ONLY check for absence
+            # of tool calls here, not use_tools, so that text-based <tool_call>
+            # blocks can still be executed even if tools were disabled for the server.
+            if not tool_calls:
                 if "<RESPONSE>" in content and "</RESPONSE>" in content:
                     start = content.index("<RESPONSE>") + len("<RESPONSE>")
                     end = content.index("</RESPONSE>")
                     return content[start:end].strip()
                 return content or "I don't have a response."
+
 
             # Add assistant message with whatever the model said
             if content.strip():
