@@ -404,7 +404,7 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
             results_text = "Tool results:\n" + "\n".join(tool_results)
             current_messages.append(
                 {
-                    "role": "user",
+                    "role": "tool",
                     "content": results_text,
                 }
             )
