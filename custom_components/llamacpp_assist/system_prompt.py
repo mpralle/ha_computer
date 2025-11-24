@@ -49,6 +49,8 @@ def generate_hermes_system_prompt(
     lines.append("Instead, you MUST emit multiple <tool_call> blocks, one for each atomic item/device.")
     lines.append("Make sure to use the tooling for date and time, if there is anything related to scheduling or time.")
     lines.append("")
+    lines.append("Whenever ANY tool can help with the user request, you MUST prefer calling tools over answering in natural language.")
+    lines.append("")
 
     # --- Current time and date ---
     now = datetime.now()
@@ -70,21 +72,8 @@ def generate_hermes_system_prompt(
     lines.append("  -> Use 2025-04-29 when calling calendar tools.")
     lines.append("")
 
-    # --- Memory context (optional, currently disabled to reduce context) ---
-    # memory_context = memory.get_context_summary()
-    # if memory_context and memory_context != "No memory stored yet.":
-    #     lines.append("# Memory Context")
-    #     lines.append(memory_context)
-    #     lines.append("")
-
-    # --- Available entities ---
-    entity_lines = _generate_entity_list(hass, max_entities)
-    if entity_lines:
-        lines.append("# Available Devices and Entities")
-        lines.extend(entity_lines)
-        lines.append("")
-
-    # --- Tool schemas ---
+    # --- Tool schemas (MOVED UP, before entity list so the model sees them clearly) ---
+    lines.append("Below are the available tools. You MUST use them whenever they can help:")
     lines.append("<tools>")
     for schema in tool_schemas:
         if "function" in schema:
@@ -96,7 +85,7 @@ def generate_hermes_system_prompt(
     lines.append("CRITICAL RULES FOR TOOL USAGE:")
     lines.append("1. If there is a tool that can perform the user's requested action, you MUST call that tool.")
     lines.append(
-        "   Examples: turning on/off devices, changing brightness, setting temperature, "
+        "   Examples: turning on/off devices (using call_service), changing brightness, setting temperature, "
         "adding/removing/listing shopping items, reading or creating calendar events, "
         "reading sensor values, etc."
     )
@@ -115,9 +104,8 @@ def generate_hermes_system_prompt(
         "'cheese and wine' or 'living room and kitchen lights'."
     )
     lines.append(
-        "3b. For call_service, the 'entity_id' MUST be a single entity_id string, "
-        "never a comma-separated list. To control multiple devices, call call_service "
-        "multiple times, once per entity."
+        "3b. For call_service, the 'entity_id' MUST be a single entity_id string. "
+        "To control multiple devices, call call_service multiple times, once per entity."
     )
     lines.append(
         "4. When you call tools, your entire response MUST consist only of one or more "
@@ -139,12 +127,16 @@ def generate_hermes_system_prompt(
     lines.append(
         "7. If the user uses a verb like 'turn on', 'turn off', 'switch on', 'switch off', "
         "'schalte ... an', 'schalte ... aus', 'mach ... an', or 'mach ... aus', "
-        "you MUST treat this as DEVICE CONTROL, not a shopping list operation. "
+        "you MUST treat this as DEVICE CONTROL. "
         "In such cases you MUST use device tools like 'call_service' and, if necessary, "
-        "'list_entities', and you MUST NOT call any shopping_list_* tools."
+        "'list_entities'. You MUST NOT call any shopping_list_* tools."
     )
     lines.append(
-        "8. When the user refers to a device by a natural-language name "
+        "8. The call_service tool CAN control lights, switches, climate, and other devices via Home Assistant services. "
+        "It is WRONG to say that none of the provided functions can control lights, because call_service CAN do that."
+    )
+    lines.append(
+        "9. When the user refers to a device by a natural-language name "
         "(e.g. 'Regallampe', 'Schranklampe', 'Wohnzimmerlampe'), you MUST NOT invent entity_ids. "
         "Instead, FIRST call 'list_entities' with an appropriate domain (typically 'light' or 'switch'). "
         "Then select ALL matching entities by comparing the 'friendly_name' field to the names mentioned "
@@ -152,19 +144,17 @@ def generate_hermes_system_prompt(
     )
     lines.append(
         "   Do NOT translate German names into English when matching. "
-        "Always use the exact entity_ids from 'list_entities' or the '# Available Devices and Entities' section above."
+        "Always use the exact entity_ids from 'list_entities' or the '# Available Devices and Entities' section below."
     )
     lines.append(
-        "9. If the user mentions MULTIPLE devices in one sentence "
+        "10. If the user mentions MULTIPLE devices in one sentence "
         "(e.g. 'Regallampe und Schranklampe'), you MUST ensure that there is one "
         "call_service tool call for EACH of these devices. "
         "Do NOT stop after the first matching entity."
     )
     lines.append(
-        "10. You MUST NOT say that you have turned on or modified a specific device "
-        "if there was no tool_call for that device in the current conversation. "
-        "For example, you MUST NOT say 'I have turned on the Schranklampe' unless you have "
-        "actually emitted a call_service tool_call with entity_id set to that Schranklampe entity."
+        "11. You MUST NOT say that you have turned on or modified a specific device "
+        "if there was no call_service tool_call for that device in the current conversation."
     )
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
@@ -174,8 +164,9 @@ def generate_hermes_system_prompt(
         "FIRST call the 'describe_service' tool for that domain and service, then use the result "
         "to build a correct 'call_service' invocation."
     )
+    lines.append("")
 
-    # --- Positive & negative EXAMPLES ---
+    # --- EXAMPLES (with GOOD and BAD patterns, including your failure case) ---
     lines.append("# EXAMPLES")
     lines.append("")
     # Simple single-item shopping
@@ -245,15 +236,19 @@ def generate_hermes_system_prompt(
         '"entity_id": "light.schranklampe"}}'
     )
     lines.append("</tool_call>")
-    lines.append("# WRONG (do NOT do this):")
-    lines.append("# Only turning on one of them and then saying both are on.")
-    lines.append("# <tool_call>")
-    lines.append('# {"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", "entity_id": "light.regallampe"}}')
-    lines.append("# </tool_call>")
-    lines.append("# <RESPONSE>")
-    lines.append('# I have turned on the Regallampe and the Schranklampe.')
-    lines.append("# </RESPONSE>")
-    lines.append("# This is WRONG because there was no call_service for the Schranklampe.")
+    lines.append("")
+    # Your failure mode as an explicit WRONG example
+    lines.append("# WRONG behaviour (do NOT do this):")
+    lines.append("User: Schalte Regallampe und Schranklampe an")
+    lines.append("# WRONG answer:")
+    lines.append("<RESPONSE>")
+    lines.append(
+        "None of the provided functions can control lights directly. However, if there were a "
+        'function like "light_turn_on" with parameters for the light entity ID, we could use that.'
+    )
+    lines.append("</RESPONSE>")
+    lines.append("# This is WRONG because the call_service tool CAN control lights in Home Assistant.")
+    lines.append("# In this situation you MUST use call_service with domain='light' and service='turn_on'.")
     lines.append("")
     # Calendar example
     lines.append("User: what did I plan for tomorrow?")
@@ -271,6 +266,13 @@ def generate_hermes_system_prompt(
         "Follow the examples above exactly. When using tools, output only <tool_call> blocks as shown, "
         "with a single JSON object inside each <tool_call> containing the keys 'name' and 'arguments'."
     )
+
+    # --- Available entities (placed LAST to reduce distraction) ---
+    # entity_lines = _generate_entity_list(hass, max_entities)
+    # if entity_lines:
+    #     lines.append("")
+    #     lines.append("# Available Devices and Entities")
+    #     lines.extend(entity_lines)
 
     return "\n".join(lines)
 
@@ -364,6 +366,7 @@ def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:
                 )
                 total_count += 1
 
+                    # Stop if we hit max_entities overall
                 if total_count >= max_entities:
                     break
 
