@@ -104,32 +104,97 @@ class CalendarListEventsTool(Tool):
     async def _get_calendar_events(
         self, entity_id: str, start: datetime, end: datetime
     ) -> list[dict[str, Any]]:
-        """Get events from a calendar entity."""
-        # This is a simplified implementation
-        # In a real implementation, we'd use the calendar component's API
-        # For now, we'll return an empty list or try to use the service
-        
+        """Get events from a calendar entity.
+
+        Tries the calendar helper API first (preferred),
+        then falls back to the calendar.get_events service.
+        Returns a list of plain dicts for the LLM.
+        """
+        events: list[Any] = []
+
+        # --- 1) Preferred: use the calendar helper API ---
         try:
-            # Try to call calendar.get_events service if available
-            response = await self.hass.services.async_call(
-                "calendar",
-                "get_events",
-                {
-                    "entity_id": entity_id,
-                    "start_date_time": start.isoformat(),
-                    "end_date_time": end.isoformat(),
-                },
-                blocking=True,
-                return_response=True,
+            # async_get_events is the canonical API used by calendar platforms
+            events = await calendar_component.async_get_events(
+                self.hass,
+                entity_id,
+                start,
+                end,
             )
-            
-            if response and entity_id in response:
-                return response[entity_id].get("events", [])
-            
-        except Exception as err:
-            _LOGGER.debug("Could not get events from %s: %s", entity_id, err)
-        
-        return []
+            _LOGGER.debug(
+                "Got %d events from calendar helper for %s", len(events), entity_id
+            )
+        except Exception as err:  # noqa: BLE001 - we want a broad fallback
+            _LOGGER.debug(
+                "Calendar helper async_get_events failed for %s: %s – falling back to service",
+                entity_id,
+                err,
+            )
+
+        # --- 2) Fallback: use the calendar.get_events service ---
+        if not events:
+            try:
+                response = await self.hass.services.async_call(
+                    "calendar",
+                    "get_events",
+                    {
+                        "entity_id": entity_id,
+                        "start_date_time": start.isoformat(),
+                        "end_date_time": end.isoformat(),
+                    },
+                    blocking=True,
+                    return_response=True,
+                )
+
+                if response and entity_id in response:
+                    events = response[entity_id].get("events", []) or []
+                    _LOGGER.debug(
+                        "Got %d events from calendar.get_events service for %s",
+                        len(events),
+                        entity_id,
+                    )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Could not get events from %s via service: %s", entity_id, err
+                )
+                return []
+
+        # --- 3) Normalise events to plain dicts ---
+        normalised: list[dict[str, Any]] = []
+
+        for ev in events:
+            # If the calendar platform already returned dicts, keep them
+            if isinstance(ev, dict):
+                normalised.append(ev)
+                continue
+
+            # Otherwise, try to map a CalendarEvent-like object to a dict
+            start_val = getattr(ev, "start", None)
+            end_val = getattr(ev, "end", None)
+
+            if isinstance(start_val, datetime):
+                start_str = start_val.isoformat()
+            else:
+                start_str = str(start_val) if start_val is not None else None
+
+            if isinstance(end_val, datetime):
+                end_str = end_val.isoformat()
+            else:
+                end_str = str(end_val) if end_val is not None else None
+
+            normalised.append(
+                {
+                    "summary": getattr(ev, "summary", "") or "",
+                    "description": getattr(ev, "description", "") or "",
+                    "location": getattr(ev, "location", "") or "",
+                    "start": start_str,
+                    "end": end_str,
+                    # If your platform exposes more fields (e.g. uid, all_day, etc.),
+                    # you can add them here.
+                }
+            )
+
+        return normalised
 
     def _parse_date(self, date_str: str) -> datetime:
         """Parse a date string to datetime."""
