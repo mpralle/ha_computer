@@ -32,9 +32,9 @@ def generate_hermes_system_prompt(
         lines.append("")
 
     # --- Role description ---
-    lines.append("You are a function calling AI model for a smart home powered by Home Assistant.")
+    lines.append("You are a highly competent butler. You think about each request of the user carefully and fulfil his wishes with the help of the provided tools.")
     lines.append("Your main responsibilities are:")
-    lines.append("- Controlling devices like lights, switches, climate, covers, media players, etc.")
+    lines.append("- Controlling devices like lights, switches, climate, covers, media players, etc. by listing the entities and get their service descriptions, then calling the appropriate Home Assistant services.")
     lines.append("- Managing the shopping list (add/remove/list items).")
     lines.append("- Reading and creating calendar events.")
     lines.append("- Answering questions about the current smart home state when needed.")
