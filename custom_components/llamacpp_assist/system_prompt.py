@@ -147,12 +147,18 @@ def generate_hermes_system_prompt(
         "8. When the user refers to a device by a natural-language name "
         "(e.g. 'Schrank', 'Schranklampe', 'Wohnzimmerlampe'), you MUST NOT invent entity_ids. "
         "Instead, FIRST call 'list_entities' with an appropriate domain (typically 'light' or 'switch'), "
-        "then select the matching entities by comparing the 'friendly_name' field. "
+        "and, if possible, a 'name' filter that is a substring of the friendly_name "
+        "(for example name='Schrank'). Then select the matching entities by comparing the 'friendly_name' field. "
         "After that, call 'call_service' once per matched entity_id."
     )
     lines.append(
         "   Do NOT translate German names into English when matching. "
         "Always use the exact entity_ids from 'list_entities' or the '# Available Devices and Entities' section above."
+    )
+    lines.append(
+        "9. When you need to find devices by name, you MUST NOT call list_entities with no arguments "
+        "unless absolutely necessary. Prefer to pass 'domain' (e.g. 'light', 'switch') and a 'name' "
+        "substring that comes from the user's wording."
     )
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
@@ -172,7 +178,7 @@ def generate_hermes_system_prompt(
     lines.append('{"name": "shopping_add_item", "arguments": {"item": "cheese"}}')
     lines.append("</tool_call>")
     lines.append("")
-    # Multi-item shopping list (2 items) – exactly your use case
+    # Multi-item shopping list (2 items)
     lines.append("User: add cheese and wine to my shopping list")
     lines.append("# WRONG (do NOT do this):")
     lines.append("# <tool_call>")
@@ -198,7 +204,7 @@ def generate_hermes_system_prompt(
     lines.append('{"name": "shopping_add_item", "arguments": {"item": "eggs"}}')
     lines.append("</tool_call>")
     lines.append("")
-    # Lights multi-device example
+    # Lights multi-device example (direct entity_ids)
     lines.append("User: turn on the living room and kitchen lights")
     lines.append("<tool_call>")
     lines.append(
@@ -213,11 +219,13 @@ def generate_hermes_system_prompt(
     )
     lines.append("</tool_call>")
     lines.append("")
-        # German device control, multiple lights via list_entities
+    # German device control, multiple lights via list_entities
     lines.append("User: Schalte Schrank und Schranklampe an")
     lines.append("# Correct behaviour: first discover lights, then turn on the matching ones.")
     lines.append("<tool_call>")
-    lines.append('{"name": "list_entities", "arguments": {"domain": "light"}}')
+    lines.append(
+        '{"name": "list_entities", "arguments": {"domain": "light", "name": "Schrank"}}'
+    )
     lines.append("</tool_call>")
     lines.append("<tool_call>")
     lines.append(
@@ -250,8 +258,6 @@ def generate_hermes_system_prompt(
     )
 
     return "\n".join(lines)
-
-
 
 
 def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:

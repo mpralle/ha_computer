@@ -132,7 +132,12 @@ class ListEntitiesTool(Tool):
 
     @property
     def description(self) -> str:
-        return "List Home Assistant entities, optionally filtered by domain or area"
+        return (
+            "List Home Assistant entities, optionally filtered by domain, area, "
+            "or a substring of the friendly name. "
+            "For device control, you should normally filter by domain "
+            "(e.g. 'light', 'switch')."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -141,33 +146,70 @@ class ListEntitiesTool(Tool):
             "properties": {
                 "domain": {
                     "type": "string",
-                    "description": "Filter by domain (e.g., 'light', 'switch', 'sensor')",
+                    "description": (
+                        "Optional: Filter by domain (e.g., 'light', 'switch', 'sensor'). "
+                        "For turning things on/off, this should typically be 'light' or 'switch'."
+                    ),
                 },
                 "area": {
                     "type": "string",
-                    "description": "Filter by area name (e.g., 'living room', 'bedroom')",
+                    "description": (
+                        "Optional: Filter by area name (e.g., 'living room', 'bedroom')."
+                    ),
+                },
+                "name": {
+                    "type": "string",
+                    "description": (
+                        "Optional: Case-insensitive substring match against the entity "
+                        "friendly_name. For example, 'Schrank' matches 'Schranklampe'."
+                    ),
                 },
             },
             "required": [],
         }
 
-    async def async_call(self, domain: str | None = None, area: str | None = None, **kwargs) -> dict[str, Any]:
+    async def async_call(
+        self,
+        domain: str | None = None,
+        area: str | None = None,
+        name: str | None = None,
+        **kwargs,
+    ) -> dict[str, Any]:
         """List entities."""
         from homeassistant.helpers import area_registry, entity_registry
-        
+
         ent_reg = entity_registry.async_get(self.hass)
         area_reg = area_registry.async_get(self.hass)
-        
-        entities = []
-        
+
+        # If the model doesn't specify a domain, restrict to common controllable domains
+        # so it doesn't get flooded with sensors/weather/system entities.
+        allowed_default_domains = {
+            "light",
+            "switch",
+            "cover",
+            "fan",
+            "media_player",
+            "climate",
+        }
+
+        entities: list[dict[str, Any]] = []
+
+        name_filter = name.lower() if name else None
+
         for state in self.hass.states.async_all():
             entity_id = state.entity_id
-            
-            # Filter by domain
-            if domain and not entity_id.startswith(f"{domain}."):
-                continue
-            
-            # Filter by area
+            entity_domain = entity_id.split(".")[0]
+
+            # Domain filtering
+            if domain:
+                if entity_domain != domain:
+                    continue
+            else:
+                # No explicit domain: if no area is specified, restrict to controllable domains
+                if not area and entity_domain not in allowed_default_domains:
+                    continue
+
+            # Area filtering
             if area:
                 entity_entry = ent_reg.async_get(entity_id)
                 if entity_entry and entity_entry.area_id:
@@ -175,19 +217,33 @@ class ListEntitiesTool(Tool):
                     if not area_entry or area_entry.name.lower() != area.lower():
                         continue
                 else:
+                    # If we require an area but can't resolve one, skip this entity
                     continue
-            
-            entities.append({
-                "entity_id": entity_id,
-                "state": state.state,
-                "friendly_name": state.attributes.get("friendly_name", entity_id),
-            })
-        
+
+            friendly_name = state.attributes.get("friendly_name", entity_id)
+
+            # Name / friendly_name filtering
+            if name_filter and name_filter not in friendly_name.lower():
+                continue
+
+            entities.append(
+                {
+                    "entity_id": entity_id,
+                    "state": state.state,
+                    "friendly_name": friendly_name,
+                    "domain": entity_domain,
+                }
+            )
+
+            if len(entities) >= 50:
+                break
+
         return {
             "success": True,
             "count": len(entities),
-            "entities": entities[:50],  # Limit to 50
+            "entities": entities,
         }
+
 
 
 class CallServiceTool(Tool):
