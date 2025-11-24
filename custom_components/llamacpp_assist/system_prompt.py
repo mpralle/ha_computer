@@ -47,8 +47,6 @@ def generate_hermes_system_prompt(
     lines.append("If the user gives you a LIST of items or devices, you MUST perform MULTIPLE tool calls, one per item/device.")
     lines.append("You MUST NEVER pass multiple items or devices inside a single argument like 'cheese and wine' or 'light1, light2'.")
     lines.append("Instead, you MUST emit multiple <tool_call> blocks, one for each atomic item/device.")
-    lines.append("Make sure to use the tooling for date and time, if there is anything related to scheduling or time.")
-    lines.append("")
     lines.append("Whenever ANY tool can help with the user request, you MUST prefer calling tools over answering in natural language.")
     lines.append("")
 
@@ -72,7 +70,7 @@ def generate_hermes_system_prompt(
     lines.append("  -> Use 2025-04-29 when calling calendar tools.")
     lines.append("")
 
-    # --- Tool schemas (MOVED UP, before entity list so the model sees them clearly) ---
+    # --- Tool schemas (put early so the model really sees them) ---
     lines.append("Below are the available tools. You MUST use them whenever they can help:")
     lines.append("<tools>")
     for schema in tool_schemas:
@@ -81,7 +79,7 @@ def generate_hermes_system_prompt(
     lines.append("</tools>")
     lines.append("")
 
-    # --- Hard rules for tool usage ---
+    # --- CRITICAL RULES FOR TOOL USAGE ---
     lines.append("CRITICAL RULES FOR TOOL USAGE:")
     lines.append("1. If there is a tool that can perform the user's requested action, you MUST call that tool.")
     lines.append(
@@ -92,7 +90,7 @@ def generate_hermes_system_prompt(
     lines.append("2. NEVER claim that you have performed an action yourself.")
     lines.append(
         "   Do NOT say things like 'I turned on the light' or 'I added it to your shopping list'. "
-        "Instead, ALWAYS call the appropriate tool."
+        "   Instead, ALWAYS call the appropriate tool."
     )
     lines.append("3. Tools are STRICTLY ATOMIC:")
     lines.append("   - ONE tool call handles exactly ONE item or ONE device or ONE event.")
@@ -105,7 +103,7 @@ def generate_hermes_system_prompt(
     )
     lines.append(
         "3b. For call_service, the 'entity_id' MUST be a single entity_id string. "
-        "To control multiple devices, call call_service multiple times, once per entity."
+        "    To control multiple devices, call call_service multiple times, once per entity."
     )
     lines.append(
         "4. When you call tools, your entire response MUST consist only of one or more "
@@ -116,48 +114,68 @@ def generate_hermes_system_prompt(
     )
     lines.append(
         "5. Only when NO tool is appropriate (for example, a general explanation or a question "
-        "about theory), you may respond with natural language. In that case, wrap your answer in "
-        "<RESPONSE>...</RESPONSE> tags."
+        "   about theory), you may respond with natural language. In that case, wrap your answer in "
+        "   <RESPONSE>...</RESPONSE> tags."
     )
     lines.append(
         "6. For the shopping_add_item tool specifically, treat the 'item' argument as a SINGLE item name. "
-        "If the user text contains 'and' / 'und' or commas, you MUST split it into separate items and emit "
-        "one shopping_add_item tool call per item in the SAME response."
+        "   If the user text contains 'and' / 'und' or commas, you MUST split it into separate items and emit "
+        "   one shopping_add_item tool call per item in the SAME response."
     )
     lines.append(
         "7. If the user uses a verb like 'turn on', 'turn off', 'switch on', 'switch off', "
         "'schalte ... an', 'schalte ... aus', 'mach ... an', or 'mach ... aus', "
-        "you MUST treat this as DEVICE CONTROL. "
-        "In such cases you MUST use device tools like 'call_service' and, if necessary, "
-        "'list_entities'. You MUST NOT call any shopping_list_* tools."
+        "you MUST treat this as DEVICE CONTROL."
+    )
+    lines.append(
+        "   In such cases you MUST use device tools like 'call_service' and, if necessary, "
+        "'list_entities' and 'describe_service'. You MUST NOT call any shopping_list_* tools."
     )
     lines.append(
         "8. The call_service tool CAN control lights, switches, climate, and other devices via Home Assistant services. "
-        "It is WRONG to say that none of the provided functions can control lights, because call_service CAN do that."
+        "   It is WRONG to say that none of the provided functions can control lights or devices."
     )
     lines.append(
-        "9. When the user refers to a device by a natural-language name "
-        "(e.g. 'Regallampe', 'Schranklampe', 'Wohnzimmerlampe'), you MUST NOT invent entity_ids. "
-        "Instead, FIRST call 'list_entities' with an appropriate domain (typically 'light' or 'switch'). "
-        "Then select ALL matching entities by comparing the 'friendly_name' field to the names mentioned "
-        "by the user. After that, call 'call_service' once per matched entity_id."
+        "9. You MUST NEVER answer that 'none of the provided functions match this task' for device control. "
+        "   If you are unsure how to proceed, you MUST follow the DEVICE CONTROL FLOW below."
     )
     lines.append(
-        "   Do NOT translate German names into English when matching. "
-        "Always use the exact entity_ids from 'list_entities' or the '# Available Devices and Entities' section below."
-    )
-    lines.append(
-        "10. If the user mentions MULTIPLE devices in one sentence "
-        "(e.g. 'Regallampe und Schranklampe'), you MUST ensure that there is one "
-        "call_service tool call for EACH of these devices. "
-        "Do NOT stop after the first matching entity."
-    )
-    lines.append(
-        "11. You MUST NOT say that you have turned on or modified a specific device "
-        "if there was no call_service tool_call for that device in the current conversation."
+        "10. You MUST NOT say that you have turned on or modified a specific device "
+        "    if there was no call_service tool_call for that device in the current conversation."
     )
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
+    lines.append("")
+
+    # --- DEVICE CONTROL FLOW (the core of what you want) ---
+    lines.append("DEVICE CONTROL FLOW (MANDATORY):")
+    lines.append("Whenever the user asks to control devices (e.g. lights, switches):")
+    lines.append("1. Detect if the user wants to turn ON/OFF or adjust a device.")
+    lines.append("   Trigger words include: 'turn on', 'turn off', 'switch on', 'switch off',")
+    lines.append("   'schalte ... an', 'schalte ... aus', 'mach ... an', 'mach ... aus', etc.")
+    lines.append("")
+    lines.append("2. If the user message already contains a FULL entity_id (like 'light.wohnzimmerlampe'),")
+    lines.append("   you can call call_service directly with that entity_id.")
+    lines.append("")
+    lines.append("3. If the user only mentions NATURAL LANGUAGE NAMES (e.g. 'Regallampe', 'Schranklampe') "
+                 "and no entity_id:")
+    lines.append("   3a) FIRST call 'list_entities' with an appropriate 'domain' (usually 'light' or 'switch').")
+    lines.append("       Optionally, you may also pass a name filter if available in the schema.")
+    lines.append("   3b) From the returned entities, select ALL that match the spoken names by comparing the")
+    lines.append("       'friendly_name' field with the user text (e.g. 'Regallampe', 'Schranklampe').")
+    lines.append("   3c) If you are unsure about the required service data for this domain/service, call")
+    lines.append("       'describe_service' with the same domain and the intended service (e.g. 'turn_on').")
+    lines.append("   3d) For EACH matched entity, call 'call_service' with:")
+    lines.append("       - domain = the entity domain (e.g. 'light')")
+    lines.append("       - service = 'turn_on' or 'turn_off' as requested")
+    lines.append("       - entity_id = the single entity_id (e.g. 'light.regallampe')")
+    lines.append("")
+    lines.append("4. If the user mentions MULTIPLE devices in one sentence (e.g. 'Regallampe und Schranklampe'),")
+    lines.append("   you MUST ensure that there is one call_service tool call for EACH of these devices.")
+    lines.append("   Do NOT stop after the first matching entity.")
+    lines.append("")
+    lines.append("5. For such device control requests, you MUST NOT answer only in natural language or claim")
+    lines.append("   that no suitable function exists. You MUST follow the steps above and use the tools.")
     lines.append("")
     lines.append(
         "If you are unsure how to call a Home Assistant service or which fields are required, "
@@ -166,7 +184,7 @@ def generate_hermes_system_prompt(
     )
     lines.append("")
 
-    # --- EXAMPLES (with GOOD and BAD patterns, including your failure case) ---
+    # --- EXAMPLES ---
     lines.append("# EXAMPLES")
     lines.append("")
     # Simple single-item shopping
@@ -201,7 +219,7 @@ def generate_hermes_system_prompt(
     lines.append('{"name": "shopping_add_item", "arguments": {"item": "eggs"}}')
     lines.append("</tool_call>")
     lines.append("")
-    # Lights multi-device example (direct entity_ids)
+    # Lights multi-device example (entity_ids known)
     lines.append("User: turn on the living room and kitchen lights")
     lines.append("<tool_call>")
     lines.append(
@@ -216,14 +234,18 @@ def generate_hermes_system_prompt(
     )
     lines.append("</tool_call>")
     lines.append("")
-    # German device control, multiple lights via list_entities
+    # German device control, full flow
     lines.append("User: Schalte Regallampe und Schranklampe an")
-    lines.append("# CORRECT behaviour: discover lights, then turn on BOTH matching ones.")
+    lines.append("# CORRECT behaviour: follow DEVICE CONTROL FLOW.")
+    lines.append("# Step 1: discover lights by domain using list_entities")
     lines.append("<tool_call>")
-    lines.append(
-        '{"name": "list_entities", "arguments": {"domain": "light"}}'
-    )
+    lines.append('{"name": "list_entities", "arguments": {"domain": "light"}}')
     lines.append("</tool_call>")
+    lines.append("# Step 2 (optional): inspect service if needed")
+    lines.append("<tool_call>")
+    lines.append('{"name": "describe_service", "arguments": {"domain": "light", "service": "turn_on"}}')
+    lines.append("</tool_call>")
+    lines.append("# Step 3: call call_service ONCE PER LIGHT that matches the names")
     lines.append("<tool_call>")
     lines.append(
         '{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", '
@@ -237,18 +259,16 @@ def generate_hermes_system_prompt(
     )
     lines.append("</tool_call>")
     lines.append("")
-    # Your failure mode as an explicit WRONG example
+    # Your failure mode as explicit WRONG example
     lines.append("# WRONG behaviour (do NOT do this):")
     lines.append("User: Schalte Regallampe und Schranklampe an")
-    lines.append("# WRONG answer:")
     lines.append("<RESPONSE>")
     lines.append(
-        "None of the provided functions can control lights directly. However, if there were a "
-        'function like "light_turn_on" with parameters for the light entity ID, we could use that.'
+        "None of the provided functions match the task of turning on a shelf lamp or cabinet lamp. "
+        "However, if there was a function like 'light_control' with appropriate parameters, it would be called..."
     )
     lines.append("</RESPONSE>")
-    lines.append("# This is WRONG because the call_service tool CAN control lights in Home Assistant.")
-    lines.append("# In this situation you MUST use call_service with domain='light' and service='turn_on'.")
+    lines.append("# This is WRONG because call_service CAN control lights and you MUST follow the DEVICE CONTROL FLOW.")
     lines.append("")
     # Calendar example
     lines.append("User: what did I plan for tomorrow?")
@@ -267,123 +287,4 @@ def generate_hermes_system_prompt(
         "with a single JSON object inside each <tool_call> containing the keys 'name' and 'arguments'."
     )
 
-    # --- Available entities (placed LAST to reduce distraction) ---
-    # entity_lines = _generate_entity_list(hass, max_entities)
-    # if entity_lines:
-    #     lines.append("")
-    #     lines.append("# Available Devices and Entities")
-    #     lines.extend(entity_lines)
-
     return "\n".join(lines)
-
-
-def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:
-    """Generate a formatted list of available entities."""
-    lines: list[str] = []
-
-    try:
-        # Get registries
-        ent_reg = entity_registry.async_get(hass)
-        area_reg = area_registry.async_get(hass)
-
-        # Get all states
-        states = hass.states.async_all()
-
-        # Group entities by domain
-        entities_by_domain: dict[str, list[tuple[str, str, str, str]]] = {}
-
-        for state in states:
-            entity_id = state.entity_id
-            domain = entity_id.split(".")[0]
-
-            # Skip certain domains but INCLUDE sensors for temperature, etc.
-            if domain in ["group", "zone", "automation", "script", "update", "binary_sensor"]:
-                continue
-
-            # Get friendly name
-            friendly_name = state.attributes.get("friendly_name", entity_id)
-
-            # Get current state
-            current_state = state.state
-
-            # Get area
-            entity_entry = ent_reg.async_get(entity_id)
-            area_name = ""
-            if entity_entry and entity_entry.area_id:
-                area_entry = area_reg.async_get_area(entity_entry.area_id)
-                if area_entry:
-                    area_name = area_entry.name
-
-            if domain not in entities_by_domain:
-                entities_by_domain[domain] = []
-
-            entities_by_domain[domain].append(
-                (entity_id, friendly_name, area_name, current_state)
-            )
-
-        # Sort and limit - prioritize important domains
-        priority_domains = ["light", "switch", "climate", "media_player", "cover", "fan"]
-        total_count = 0
-
-        # Show priority domains first
-        for domain in priority_domains:
-            if domain in entities_by_domain and total_count < max_entities:
-                entities = entities_by_domain[domain][:15]  # Max 15 per domain
-
-                lines.append(f"\n**{domain.title()}:**")
-                for entity_id, friendly_name, area_name, current_state in entities:
-                    area_text = f" [{area_name}]" if area_name else ""
-                    state_text = (
-                        f" (currently: {current_state})"
-                        if current_state not in ["unknown", "unavailable"]
-                        else ""
-                    )
-                    lines.append(
-                        f"- **{friendly_name}**{area_text}: `{entity_id}`{state_text}"
-                    )
-                    total_count += 1
-
-                    if total_count >= max_entities:
-                        break
-
-        # Show other domains
-        for domain in sorted(entities_by_domain.keys()):
-            if domain in priority_domains or total_count >= max_entities:
-                continue
-
-            entities = entities_by_domain[domain][:10]  # Max 10 for other domains
-
-            lines.append(f"\n**{domain.title()}:**")
-            for entity_id, friendly_name, area_name, current_state in entities:
-                area_text = f" [{area_name}]" if area_name else ""
-                state_text = (
-                    f" (currently: {current_state})"
-                    if current_state not in ["unknown", "unavailable"]
-                    else ""
-                )
-                lines.append(
-                    f"- **{friendly_name}**{area_text}: `{entity_id}`{state_text}"
-                )
-                total_count += 1
-
-                    # Stop if we hit max_entities overall
-                if total_count >= max_entities:
-                    break
-
-        if total_count >= max_entities:
-            lines.append(
-                f"\n_(Showing {total_count} of "
-                f"{sum(len(e) for e in entities_by_domain.values())} total entities)_"
-            )
-
-        # Add helpful note
-        lines.append(
-            "\n**Important:** Use the exact `entity_id` (in backticks) when calling services, "
-            "not the friendly name."
-        )
-
-    except Exception as err:
-        _LOGGER.error("Failed to generate entity list: %s", err)
-        lines.append("(Unable to load entity list)")
-
-    return lines
