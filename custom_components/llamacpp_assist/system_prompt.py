@@ -131,6 +131,13 @@ def generate_hermes_system_prompt(
         "If the user text contains 'and' / 'und' or commas, you MUST split it into separate items and emit "
         "one shopping_add_item tool call per item in the SAME response."
     )
+    lines.append(
+        "7. If the user uses a verb like 'turn on', 'turn off', 'switch on', 'switch off', "
+        "'schalte ... an', 'schalte ... aus', 'mach ... an', or 'mach ... aus', "
+        "you MUST treat this as DEVICE CONTROL, not a shopping list operation. "
+        "In such cases you MUST use device tools like 'call_service' and, if necessary, "
+        "'list_entities', and you MUST NOT call any shopping_list_* tools."
+    )
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
     lines.append("")
