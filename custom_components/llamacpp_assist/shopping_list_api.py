@@ -30,7 +30,7 @@ class ShoppingAddItemTool(Tool):
             "properties": {
                 "item": {
                     "type": "string",
-                    "description": "The item to add to the shopping list, this should be atomic (e.g., 'milk', 'eggs')",
+                    "description": "The item to add to the shopping list",
                 }
             },
             "required": ["item"],

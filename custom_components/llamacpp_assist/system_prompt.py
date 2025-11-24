@@ -35,6 +35,8 @@ def generate_hermes_system_prompt(
     lines.append("You are provided with function signatures within <tools></tools> XML tags.")
     lines.append("You may call one or more functions to assist with the user request.")
     lines.append("For each function call, return a JSON object with function name and arguments within <tool_call></tool_call> XML tags.")
+    lines.append("Tools are always designed to handle atomic tasks; if you receive a list of items, call the tool multiple times, once per item.")
+    lines.append("For example, to add items to a shopping list, call the 'shopping_add_item' tool once per item. To turn on multiple lights, execute the tool once per light.")
     lines.append("")
     
     # Current time and date
