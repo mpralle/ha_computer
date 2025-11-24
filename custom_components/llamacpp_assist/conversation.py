@@ -27,7 +27,7 @@ from .const import (
     DEFAULT_TIMEOUT,
     DOMAIN,
 )
-from .system_prompt import generate_system_prompt
+from .system_prompt import generate_hermes_system_prompt
 from .tools import create_tool_registry
 from .shopping_list_api import (
     ShoppingAddItemTool,
@@ -105,17 +105,14 @@ class LlamaCppConversationEntity(conversation.AbstractConversationAgent):
         # Get tool schemas
         tool_schemas = self.tool_registry.get_all_schemas()
         
-        # Detect if we should use Hermes format (for Hermes models)
-        # You can make this configurable later
-        use_hermes = True  # Enable Hermes format for better tool calling
         
         # Generate system prompt
-        system_prompt = generate_system_prompt(
+        system_prompt = generate_hermes_system_prompt(
             self.hass,
             self.memory,
             custom_prefix=system_prompt_prefix,
-            use_hermes_format=use_hermes,
-            tool_schemas=tool_schemas if use_hermes else None,
+            max_entities=50,
+            tool_schemas=tool_schemas,
         )
         
         # Build messages
