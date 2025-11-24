@@ -145,20 +145,26 @@ def generate_hermes_system_prompt(
     )
     lines.append(
         "8. When the user refers to a device by a natural-language name "
-        "(e.g. 'Schrank', 'Schranklampe', 'Wohnzimmerlampe'), you MUST NOT invent entity_ids. "
-        "Instead, FIRST call 'list_entities' with an appropriate domain (typically 'light' or 'switch'), "
-        "and, if possible, a 'name' filter that is a substring of the friendly_name "
-        "(for example name='Schrank'). Then select the matching entities by comparing the 'friendly_name' field. "
-        "After that, call 'call_service' once per matched entity_id."
+        "(e.g. 'Regallampe', 'Schranklampe', 'Wohnzimmerlampe'), you MUST NOT invent entity_ids. "
+        "Instead, FIRST call 'list_entities' with an appropriate domain (typically 'light' or 'switch'). "
+        "Then select ALL matching entities by comparing the 'friendly_name' field to the names mentioned "
+        "by the user. After that, call 'call_service' once per matched entity_id."
     )
     lines.append(
         "   Do NOT translate German names into English when matching. "
         "Always use the exact entity_ids from 'list_entities' or the '# Available Devices and Entities' section above."
     )
     lines.append(
-        "9. When you need to find devices by name, you MUST NOT call list_entities with no arguments "
-        "unless absolutely necessary. Prefer to pass 'domain' (e.g. 'light', 'switch') and a 'name' "
-        "substring that comes from the user's wording."
+        "9. If the user mentions MULTIPLE devices in one sentence "
+        "(e.g. 'Regallampe und Schranklampe'), you MUST ensure that there is one "
+        "call_service tool call for EACH of these devices. "
+        "Do NOT stop after the first matching entity."
+    )
+    lines.append(
+        "10. You MUST NOT say that you have turned on or modified a specific device "
+        "if there was no tool_call for that device in the current conversation. "
+        "For example, you MUST NOT say 'I have turned on the Schranklampe' unless you have "
+        "actually emitted a call_service tool_call with entity_id set to that Schranklampe entity."
     )
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
@@ -220,17 +226,17 @@ def generate_hermes_system_prompt(
     lines.append("</tool_call>")
     lines.append("")
     # German device control, multiple lights via list_entities
-    lines.append("User: Schalte Schrank und Schranklampe an")
-    lines.append("# Correct behaviour: first discover lights, then turn on the matching ones.")
+    lines.append("User: Schalte Regallampe und Schranklampe an")
+    lines.append("# CORRECT behaviour: discover lights, then turn on BOTH matching ones.")
     lines.append("<tool_call>")
     lines.append(
-        '{"name": "list_entities", "arguments": {"domain": "light", "name": "Schrank"}}'
+        '{"name": "list_entities", "arguments": {"domain": "light"}}'
     )
     lines.append("</tool_call>")
     lines.append("<tool_call>")
     lines.append(
         '{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", '
-        '"entity_id": "light.schrank"}}'
+        '"entity_id": "light.regallampe"}}'
     )
     lines.append("</tool_call>")
     lines.append("<tool_call>")
@@ -239,6 +245,15 @@ def generate_hermes_system_prompt(
         '"entity_id": "light.schranklampe"}}'
     )
     lines.append("</tool_call>")
+    lines.append("# WRONG (do NOT do this):")
+    lines.append("# Only turning on one of them and then saying both are on.")
+    lines.append("# <tool_call>")
+    lines.append('# {"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", "entity_id": "light.regallampe"}}')
+    lines.append("# </tool_call>")
+    lines.append("# <RESPONSE>")
+    lines.append('# I have turned on the Regallampe and the Schranklampe.')
+    lines.append("# </RESPONSE>")
+    lines.append("# This is WRONG because there was no call_service for the Schranklampe.")
     lines.append("")
     # Calendar example
     lines.append("User: what did I plan for tomorrow?")
