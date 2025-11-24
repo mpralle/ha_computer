@@ -53,6 +53,18 @@ def generate_hermes_system_prompt(
     lines.append(f"Current date and time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"Day of week: {now.strftime('%A')}")
     lines.append("")
+        # Date interpretation rules
+    lines.append("DATE INTERPRETATION RULES:")
+    lines.append("Whenever the user mentions a calendar date without a year "
+                 "(for example '29 April' or 'on the 29th of April'), "
+                 "you MUST interpret it using the current year from the 'Current date and time' above, "
+                 "unless the user explicitly specifies another year.")
+    lines.append("If today is close to that date, assume they mean that date in the current year.")
+    lines.append("Example:")
+    lines.append("  Current date and time: 2025-11-24 10:00:00")
+    lines.append("  User: What do I have planned for the 29th of April?")
+    lines.append("  -> Use 2025-04-29 when calling calendar tools.")
+    lines.append("")
 
     # --- Memory context ---
     memory_context = memory.get_context_summary()
