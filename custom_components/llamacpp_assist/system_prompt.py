@@ -53,13 +53,18 @@ def generate_hermes_system_prompt(
     lines.append(f"Current date and time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"Day of week: {now.strftime('%A')}")
     lines.append("")
-        # Date interpretation rules
+
+    # --- Date interpretation rules ---
     lines.append("DATE INTERPRETATION RULES:")
-    lines.append("Whenever the user mentions a calendar date without a year "
-                 "(for example '29 April' or 'on the 29th of April'), "
-                 "you MUST interpret it using the current year from the 'Current date and time' above, "
-                 "unless the user explicitly specifies another year.")
-    lines.append("If today is close to that date, assume they mean that date in the current year.")
+    lines.append(
+        "Whenever the user mentions a calendar date without a year "
+        "(for example '29 April' or 'on the 29th of April'), "
+        "you MUST interpret it using the current year from the 'Current date and time' above, "
+        "unless the user explicitly specifies another year."
+    )
+    lines.append(
+        "If today is close to that date, assume they mean that date in the current year."
+    )
     lines.append("Example:")
     lines.append("  Current date and time: 2025-11-24 10:00:00")
     lines.append("  User: What do I have planned for the 29th of April?")
@@ -91,18 +96,34 @@ def generate_hermes_system_prompt(
     # --- Hard rules for tool usage ---
     lines.append("CRITICAL RULES FOR TOOL USAGE:")
     lines.append("1. If there is a tool that can perform the user's requested action, you MUST call that tool.")
-    lines.append("   Examples: turning on/off devices, changing brightness, setting temperature, adding/removing/listing shopping items,")
-    lines.append("   reading or creating calendar events, reading sensor values, etc.")
+    lines.append(
+        "   Examples: turning on/off devices, changing brightness, setting temperature, "
+        "adding/removing/listing shopping items, reading or creating calendar events, "
+        "reading sensor values, etc."
+    )
     lines.append("2. NEVER claim that you have performed an action yourself.")
-    lines.append("   Do NOT say things like 'I turned on the light' or 'I added it to your shopping list'.")
-    lines.append("   Instead, ALWAYS call the appropriate tool.")
+    lines.append(
+        "   Do NOT say things like 'I turned on the light' or 'I added it to your shopping list'. "
+        "Instead, ALWAYS call the appropriate tool."
+    )
     lines.append("3. Tools are atomic:")
     lines.append("   - One tool call handles exactly one item or one device or one event.")
-    lines.append("   - If the user mentions multiple items or devices, you MUST emit MULTIPLE <tool_call> blocks, one per item/device.")
-    lines.append("4. When you call tools, your entire response MUST consist only of one or more <tool_call>...</tool_call> blocks.")
-    lines.append("   Do NOT include any natural language text outside <tool_call> tags in that case.")
-    lines.append("5. Only when NO tool is appropriate (for example, a general explanation or a question about theory),")
-    lines.append("   you may respond with natural language. In that case, wrap your answer in <RESPONSE>...</RESPONSE> tags.")
+    lines.append(
+        "   - If the user mentions multiple items or devices, you MUST emit MULTIPLE "
+        "<tool_call> blocks, one per item/device."
+    )
+    lines.append(
+        "4. When you call tools, your entire response MUST consist only of one or more "
+        "<tool_call>...</tool_call> blocks."
+    )
+    lines.append(
+        "   Do NOT include any natural language text outside <tool_call> tags in that case."
+    )
+    lines.append(
+        "5. Only when NO tool is appropriate (for example, a general explanation or a question "
+        "about theory), you may respond with natural language. In that case, wrap your answer in "
+        "<RESPONSE>...</RESPONSE> tags."
+    )
     lines.append("")
     lines.append("Don't make assumptions about what values to use with functions. Ask for clarification if needed.")
     lines.append("")
@@ -125,7 +146,10 @@ def generate_hermes_system_prompt(
     lines.append("")
     lines.append("User: turn on the living room light")
     lines.append("<tool_call>")
-    lines.append('{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", "entity_id": "light.living_room"}}')
+    lines.append(
+        '{"name": "call_service", "arguments": {"domain": "light", "service": "turn_on", '
+        '"entity_id": "light.living_room"}}'
+    )
     lines.append("</tool_call>")
     lines.append("")
     lines.append("User: what did I plan for tomorrow?")
@@ -138,41 +162,43 @@ def generate_hermes_system_prompt(
     lines.append("Today is a specific day of the week. (Use the given current date and time to determine it.)")
     lines.append("</RESPONSE>")
     lines.append("")
-    lines.append("Follow the examples above exactly. When using tools, output only <tool_call> blocks as shown,")
-    lines.append("with a single JSON object inside each <tool_call> containing the keys 'name' and 'arguments'.")
+    lines.append(
+        "Follow the examples above exactly. When using tools, output only <tool_call> blocks as shown, "
+        "with a single JSON object inside each <tool_call> containing the keys 'name' and 'arguments'."
+    )
 
     return "\n".join(lines)
 
 
 def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:
     """Generate a formatted list of available entities."""
-    lines = []
-    
+    lines: list[str] = []
+
     try:
         # Get registries
         ent_reg = entity_registry.async_get(hass)
         area_reg = area_registry.async_get(hass)
-        
+
         # Get all states
         states = hass.states.async_all()
-        
+
         # Group entities by domain
         entities_by_domain: dict[str, list[tuple[str, str, str, str]]] = {}
-        
+
         for state in states:
             entity_id = state.entity_id
             domain = entity_id.split(".")[0]
-            
+
             # Skip certain domains but INCLUDE sensors for temperature, etc.
             if domain in ["group", "zone", "automation", "script", "update", "binary_sensor"]:
                 continue
-            
+
             # Get friendly name
             friendly_name = state.attributes.get("friendly_name", entity_id)
-            
+
             # Get current state
             current_state = state.state
-            
+
             # Get area
             entity_entry = ent_reg.async_get(entity_id)
             area_name = ""
@@ -180,56 +206,76 @@ def _generate_entity_list(hass: HomeAssistant, max_entities: int) -> list[str]:
                 area_entry = area_reg.async_get_area(entity_entry.area_id)
                 if area_entry:
                     area_name = area_entry.name
-            
+
             if domain not in entities_by_domain:
                 entities_by_domain[domain] = []
-            
-            entities_by_domain[domain].append((entity_id, friendly_name, area_name, current_state))
-        
+
+            entities_by_domain[domain].append(
+                (entity_id, friendly_name, area_name, current_state)
+            )
+
         # Sort and limit - prioritize important domains
         priority_domains = ["light", "switch", "climate", "media_player", "cover", "fan"]
         total_count = 0
-        
+
         # Show priority domains first
         for domain in priority_domains:
             if domain in entities_by_domain and total_count < max_entities:
                 entities = entities_by_domain[domain][:15]  # Max 15 per domain
-                
+
                 lines.append(f"\n**{domain.title()}:**")
                 for entity_id, friendly_name, area_name, current_state in entities:
                     area_text = f" [{area_name}]" if area_name else ""
-                    state_text = f" (currently: {current_state})" if current_state not in ["unknown", "unavailable"] else ""
-                    lines.append(f"- **{friendly_name}**{area_text}: `{entity_id}`{state_text}")
+                    state_text = (
+                        f" (currently: {current_state})"
+                        if current_state not in ["unknown", "unavailable"]
+                        else ""
+                    )
+                    lines.append(
+                        f"- **{friendly_name}**{area_text}: `{entity_id}`{state_text}"
+                    )
                     total_count += 1
-                    
+
                     if total_count >= max_entities:
                         break
-        
+
         # Show other domains
         for domain in sorted(entities_by_domain.keys()):
             if domain in priority_domains or total_count >= max_entities:
                 continue
-            
+
             entities = entities_by_domain[domain][:10]  # Max 10 for other domains
-            
+
             lines.append(f"\n**{domain.title()}:**")
             for entity_id, friendly_name, area_name, current_state in entities:
                 area_text = f" [{area_name}]" if area_name else ""
-                state_text = f" (currently: {current_state})" if current_state not in ["unknown", "unavailable"] else ""
-                lines.append(f"- **{friendly_name}**{area_text}: `{entity_id}`{state_text}")
+                state_text = (
+                    f" (currently: {current_state})"
+                    if current_state not in ["unknown", "unavailable"]
+                    else ""
+                )
+                lines.append(
+                    f"- **{friendly_name}**{area_text}: `{entity_id}`{state_text}"
+                )
                 total_count += 1
-                
+
                 if total_count >= max_entities:
                     break
-        
+
         if total_count >= max_entities:
-            lines.append(f"\n_(Showing {total_count} of {sum(len(e) for e in entities_by_domain.values())} total entities)_")
-        
+            lines.append(
+                f"\n_(Showing {total_count} of "
+                f"{sum(len(e) for e in entities_by_domain.values())} total entities)_"
+            )
+
         # Add helpful note
-        lines.append("\n**Important:** Use the exact `entity_id` (in backticks) when calling services, not the friendly name.")
-    
+        lines.append(
+            "\n**Important:** Use the exact `entity_id` (in backticks) when calling services, "
+            "not the friendly name."
+        )
+
     except Exception as err:
         _LOGGER.error("Failed to generate entity list: %s", err)
         lines.append("(Unable to load entity list)")
-    
+
     return lines
