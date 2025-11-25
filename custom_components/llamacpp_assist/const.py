@@ -10,6 +10,7 @@ CONF_TEMPERATURE = "temperature"
 CONF_MAX_TOKENS = "max_tokens"
 CONF_TIMEOUT = "timeout"
 CONF_SYSTEM_PROMPT_PREFIX = "system_prompt_prefix"
+CONF_ENABLE_MULTI_AGENT = "enable_multi_agentic_system"
 
 # Defaults
 DEFAULT_SERVER_URL = "http://localhost:8080"

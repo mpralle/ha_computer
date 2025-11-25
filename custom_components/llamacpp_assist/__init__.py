@@ -8,8 +8,9 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN
+from .const import CONF_ENABLE_MULTI_AGENT, DOMAIN
 from .conversation import LlamaCppConversationEntity
+from .conversation_multiagent import MultiAgentConversationEntity
 from .memory import MemoryStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,7 +35,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create and register conversation agent directly (not via platform)
     from homeassistant.components import conversation
     
-    agent = LlamaCppConversationEntity(hass, entry)
+    # Check if multi-agent system is enabled
+    options = entry.options
+    enable_multi_agent = options.get(CONF_ENABLE_MULTI_AGENT, False)
+    
+    if enable_multi_agent:
+        _LOGGER.info("Using MULTI-AGENT conversation pipeline")
+        agent = MultiAgentConversationEntity(hass, entry)
+    else:
+        _LOGGER.info("Using CLASSIC conversation pipeline")
+        agent = LlamaCppConversationEntity(hass, entry)
+    
     conversation.async_set_agent(hass, entry, agent)
     
     _LOGGER.info("Llama.cpp Assist conversation agent registered for entry %s", entry.entry_id)

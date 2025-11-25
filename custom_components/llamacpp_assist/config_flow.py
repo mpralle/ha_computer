@@ -15,6 +15,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_API_KEY,
+    CONF_ENABLE_MULTI_AGENT,
     CONF_MAX_TOKENS,
     CONF_MODEL_NAME,
     CONF_SERVER_URL,
@@ -165,6 +166,9 @@ class LlamaCppAssistOptionsFlow(config_entries.OptionsFlow):
         current_prompt_prefix = self.options.get(
             CONF_SYSTEM_PROMPT_PREFIX, ""
         )
+        current_multi_agent = self.options.get(
+            CONF_ENABLE_MULTI_AGENT, False
+        )
 
         options_schema = vol.Schema(
             {
@@ -180,6 +184,9 @@ class LlamaCppAssistOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_SYSTEM_PROMPT_PREFIX, default=current_prompt_prefix
                 ): str,
+                vol.Optional(
+                    CONF_ENABLE_MULTI_AGENT, default=current_multi_agent
+                ): bool,
             }
         )
 

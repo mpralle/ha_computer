@@ -50,6 +50,23 @@ def generate_hermes_system_prompt(
     lines.append("</tools>")
     lines.append("")
 
+    # --- THINKING PATTERN ---
+    lines.append("THINKING PATTERN:")
+    lines.append("Before responding, ask yourself:")
+    lines.append("1. What information do I need to fulfill this request?")
+    lines.append("2. Which tools can help me get that information?")
+    lines.append("3. Once I have the information, which tools help me achieve the goal?")
+    lines.append("4. Execute all necessary tool calls.")
+    lines.append("")
+    lines.append("Example thought process:")
+    lines.append("  User: 'Turn on the bedroom lamp'")
+    lines.append("  - Need: entity_id for bedroom lamp")
+    lines.append("  - Get it: list_entities(domain='light') to find all lights")
+    lines.append("  - Action: call_service for matched entity")
+    lines.append("")
+    lines.append("Don't give up if one approach seems unclear. Think about what you need to know first.")
+    lines.append("")
+
     # --- CORE RULES (simplified) ---
     lines.append("TOOL USAGE:")
     lines.append("- Always use tools when they can help. Never pretend to do actions yourself.")
