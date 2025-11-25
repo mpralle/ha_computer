@@ -168,16 +168,28 @@ class SelectionAgent:
         action = task.get("action", "turn_on")
         domain = task.get("domain", "light")
         
+        # Merge params from task.params AND any task-level fields that look like service parameters
+        # (e.g., "temperature", "brightness", "hvac_mode", etc.)
+        service_params = dict(params)  # Start with explicit params
+        
+        # Extract common service parameters that might be at task level
+        param_fields = ["temperature", "hvac_mode", "brightness", "color_temp", "position", 
+                       "percentage", "speed", "volume_level", "media_content_id"]
+        for field in param_fields:
+            if field in task and field not in service_params:
+                service_params[field] = task[field]
+        
         service_data = {
             "domain": domain,
-            "service": self._action_to_service(action),
-            "data": params  # Use params from task, not from LLM
+            "service": self._action_to_service(action, domain),  # Pass domain for proper mapping
+            "data": service_params  # Merged parameters
         }
         
         _LOGGER.debug(
-            "Using service from task action '%s' -> service '%s' (ignoring LLM suggestion)",
+            "Using service from task action '%s' -> service '%s' with params %s (ignoring LLM suggestion)",
             action,
-            service_data["service"]
+            service_data["service"],
+            service_params
         )
 
         task["selected_entities"] = selected_entities
@@ -231,15 +243,105 @@ class SelectionAgent:
         
         return task
     
-    def _action_to_service(self, action: str) -> str:
-        """Convert action to service name."""
-        if action == "turn_on":
-            return "turn_on"
-        elif action == "turn_off":
-            return "turn_off"
-        elif action == "toggle":
-            return "toggle"
-        elif action == "set":
-            return "turn_on"
+    
+    def _action_to_service(self, action: str, domain: str = "light") -> str:
+        """
+        Convert action to service name based on domain.
+        
+        This mapping ensures the correct service is called for each domain type.
+        Supports all major Home Assistant domains.
+        """
+        action_lower = action.lower()
+        
+        # Domain-specific action mappings
+        if domain == "climate":
+            mapping = {
+                "set_temperature": "set_temperature",
+                "set_temp": "set_temperature",
+                "set_hvac_mode": "set_hvac_mode",
+                "set_mode": "set_hvac_mode",
+                "turn_on": "turn_on",
+                "turn_off": "turn_off",
+            }
+            return mapping.get(action_lower, "set_temperature")
+        
+        elif domain == "cover":
+            mapping = {
+                "open": "open_cover",
+                "open_cover": "open_cover",
+                "close": "close_cover",
+                "close_cover": "close_cover",
+                "stop": "stop_cover",
+                "stop_cover": "stop_cover",
+                "toggle": "toggle",
+            }
+            return mapping.get(action_lower, "toggle")
+        
+        elif domain == "lock":
+            mapping = {
+                "lock": "lock",
+                "unlock": "unlock",
+                "open": "open",
+            }
+            return mapping.get(action_lower, "lock")
+        
+        elif domain == "media_player":
+            mapping = {
+                "play": "media_play",
+                "media_play": "media_play",
+                "pause": "media_pause",
+                "media_pause": "media_pause",
+                "stop": "media_stop",
+                "media_stop": "media_stop",
+                "next": "media_next_track",
+                "previous": "media_previous_track",
+                "volume_up": "volume_up",
+                "volume_down": "volume_down",
+                "mute": "volume_mute",
+                "turn_on": "turn_on",
+                "turn_off": "turn_off",
+            }
+            return mapping.get(action_lower, "media_play")
+        
+        elif domain == "fan":
+            mapping = {
+                "turn_on": "turn_on",
+                "turn_off": "turn_off",
+                "toggle": "toggle",
+                "set_speed": "set_percentage",
+                "set_percentage": "set_percentage",
+            }
+            return mapping.get(action_lower, "turn_on")
+        
+        elif domain == "vacuum":
+            mapping = {
+                "start": "start",
+                "pause": "pause",
+                "stop": "stop",
+                "return_to_base": "return_to_base",
+                "clean_spot": "clean_spot",
+                "turn_on": "start",
+                "turn_off": "return_to_base",
+            }
+            return mapping.get(action_lower, "start")
+        
+        elif domain in ("light", "switch"):
+            # Standard on/off/toggle devices
+            mapping = {
+                "turn_on": "turn_on",
+                "on": "turn_on",
+                "turn_off": "turn_off",
+                "off": "turn_off",
+                "toggle": "toggle",
+                "set": "turn_on",  # "set" with params = turn_on
+            }
+            return mapping.get(action_lower, "turn_on")
+        
         else:
-            return "turn_on"
+            # Default fallback for unknown domains
+            mapping = {
+                "turn_on": "turn_on",
+                "turn_off": "turn_off",
+                "toggle": "toggle",
+            }
+            return mapping.get(action_lower, "turn_on")
