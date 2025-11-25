@@ -122,27 +122,35 @@ class LlamaCppClient:
             Parsed JSON response as a dictionary
         
         Raises:
-            json.JSONDecodeError: If response cannot be parsed as JSON
+            ValueError: If response cannot be parsed as JSON
         """
         content = await self.chat(messages, temperature, max_tokens, timeout)
         
+        _LOGGER.debug("Parsing JSON from response: %s", content[:200])
+        
         # Try to extract JSON from markdown code blocks if present
-        if "```json" in content:
-            # Extract content between ```json and ```
-            start = content.index("```json") + 7
-            end = content.index("```", start)
-            content = content[start:end].strip()
-        elif "```" in content:
-            # Try generic code block
-            start = content.index("```") + 3
-            # Skip language identifier if present
-            if "\n" in content[start:]:
-                start = content.index("\n", start) + 1
-            end = content.index("```", start)
-            content = content[start:end].strip()
+        import re
+        
+        # Try ```json ... ``` blocks first
+        json_block_match = re.search(r'```json\s*\n(.*?)\n```', content, re.DOTALL)
+        if json_block_match:
+            content = json_block_match.group(1).strip()
+            _LOGGER.debug("Extracted from ```json block")
+        else:
+            # Try generic ``` ... ``` blocks
+            code_block_match = re.search(r'```\s*\n(.*?)\n```', content, re.DOTALL)
+            if code_block_match:
+                content = code_block_match.group(1).strip()
+                _LOGGER.debug("Extracted from generic ``` block")
+            else:
+                # Try to find JSON object directly using regex
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if json_match:
+                    content = json_match.group(0)
+                    _LOGGER.debug("Extracted JSON object with regex")
         
         try:
             return json.loads(content)
         except json.JSONDecodeError as err:
-            _LOGGER.error("Failed to parse LLM JSON response: %s", content[:200])
+            _LOGGER.error("Failed to parse LLM JSON response. Content: %s", content[:500])
             raise ValueError(f"Invalid JSON response from LLM: {err}") from err
