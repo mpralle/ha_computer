@@ -162,13 +162,23 @@ class SelectionAgent:
                     raw_targets,
                 )
 
-        # service_data aus LLM, aber Domain/Service sicherstellen
-        service_data = selection_result.get("service_data") or {}
-        if not service_data.get("domain"):
-            service_data["domain"] = task.get("domain", "light")
-        if not service_data.get("service"):
-            action = task.get("action", "turn_on")
-            service_data["service"] = self._action_to_service(action)
+
+        # --- Build service_data based on TASK's action, not LLM response ---
+        # The Selection Agent should ONLY select entities, NOT change the action/service
+        action = task.get("action", "turn_on")
+        domain = task.get("domain", "light")
+        
+        service_data = {
+            "domain": domain,
+            "service": self._action_to_service(action),
+            "data": params  # Use params from task, not from LLM
+        }
+        
+        _LOGGER.debug(
+            "Using service from task action '%s' -> service '%s' (ignoring LLM suggestion)",
+            action,
+            service_data["service"]
+        )
 
         task["selected_entities"] = selected_entities
         task["service_data"] = service_data
@@ -177,17 +187,19 @@ class SelectionAgent:
         if selected_entities:
             task["status"] = "ready_for_execution"
         else:
-            # Optional: du könntest hier auch "failed" setzen, wenn du lieber
-            # eine Fehlermeldung an den User geben willst.
+            # No entities selected - mark as ready but executor will skip it
             task["status"] = "ready_for_execution"
 
         _LOGGER.info(
-            "Selected %d entities (validated): %s",
+            "Selected %d entities (validated) for %s.%s: %s",
             len(selected_entities),
+            service_data["domain"],
+            service_data["service"],
             selected_entities,
         )
 
         return task
+
 
     
     async def _select_calendar(self, task: dict[str, Any]) -> dict[str, Any]:
