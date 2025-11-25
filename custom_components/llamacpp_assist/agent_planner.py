@@ -40,7 +40,7 @@ TASK TYPES:
   Fields: key, value
 
 RULES FOR TASKS:
-1. Output: {"tasks": [...]}
+1. Output: {{"tasks": [...]}}
 2. Keep raw_targets and raw_items exactly as the user said them
 3. Do NOT invent entity_ids or specific HA names
 4. If user says "X und Y", put both in raw_targets (e.g., ["X", "Y"])
@@ -50,29 +50,29 @@ RULES FOR TASKS:
 8. Always include an "id" field for each task (e.g., "t1", "t2")
 
 RULES FOR CONVERSATIONAL:
-1. Output: {"response": "Your answer here"}
+1. Output: {{"response": "Your answer here"}}
 2. Answer in the same language as the user
 3. Be brief and helpful
 
 EXAMPLES:
 
 User: "Schalte Regallampe und Schranklampe an"
-Output: {"tasks": [{"id": "t1", "type": "device_control", "action": "turn_on", "raw_targets": ["Regallampe", "Schranklampe"], "domain": "light"}]}
+Output: {{"tasks": [{{"id": "t1", "type": "device_control", "action": "turn_on", "raw_targets": ["Regallampe", "Schranklampe"], "domain": "light"}}]}}
 
 User: "Packe Käse und Wein auf die Einkaufsliste"
-Output: {"tasks": [{"id": "t1", "type": "shopping_add", "raw_items": "Käse und Wein"}]}
+Output: {{"tasks": [{{"id": "t1", "type": "shopping_add", "raw_items": "Käse und Wein"}}]}}
 
 User: "Turn on kitchen light and add milk to shopping list"
-Output: {"tasks": [{"id": "t1", "type": "device_control", "action": "turn_on", "raw_targets": ["kitchen light"], "domain": "light"}, {"id": "t2", "type": "shopping_add", "raw_items": "milk"}]}
+Output: {{"tasks": [{{"id": "t1", "type": "device_control", "action": "turn_on", "raw_targets": ["kitchen light"], "domain": "light"}}, {{"id": "t2", "type": "shopping_add", "raw_items": "milk"}}]}}
 
 User: "Was steht morgen im Kalender?"
-Output: {"tasks": [{"id": "t1", "type": "calendar_query", "start": "tomorrow"}]}
+Output: {{"tasks": [{{"id": "t1", "type": "calendar_query", "start": "tomorrow"}}]}}
 
 User: "Guten Morgen"
-Output: {"response": "Guten Morgen! Wie kann ich dir helfen?"}
+Output: {{"response": "Guten Morgen! Wie kann ich dir helfen?"}}
 
 User: "What can you do?"
-Output: {"response": "I can help you control devices like lights and switches, manage your shopping list, check your calendar, and remember information for you. Just ask!"}
+Output: {{"response": "I can help you control devices like lights and switches, manage your shopping list, check your calendar, and remember information for you. Just ask!"}}
 
 Current date: {current_date}"""
 
