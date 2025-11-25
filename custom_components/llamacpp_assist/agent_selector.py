@@ -173,16 +173,20 @@ class SelectionAgent:
         service_params = dict(params)  # Start with explicit params
         
         # Extract common service parameters that might be at task level
-        param_fields = ["temperature", "hvac_mode", "brightness", "color_temp", "position", 
-                       "percentage", "speed", "volume_level", "media_content_id"]
+        param_fields = ["temperature", "target_temperature", "hvac_mode", "brightness", 
+                       "color_temp", "position", "percentage", "speed", "volume_level", 
+                       "media_content_id"]
         for field in param_fields:
             if field in task and field not in service_params:
                 service_params[field] = task[field]
         
+        # Normalize parameters for HA compatibility
+        service_params = self._normalize_service_params(service_params, domain)
+        
         service_data = {
             "domain": domain,
             "service": self._action_to_service(action, domain),  # Pass domain for proper mapping
-            "data": service_params  # Merged parameters
+            "data": service_params  # Merged and normalized parameters
         }
         
         _LOGGER.debug(
@@ -242,6 +246,47 @@ class SelectionAgent:
         )
         
         return task
+
+
+    def _normalize_service_params(self, params: dict[str, Any], domain: str) -> dict[str, Any]:
+        """
+        Normalize service parameters to match Home Assistant expectations.
+        
+        Handles:
+        - Parameter name variations (target_temperature → temperature)
+        - Type conversions (string "25°C" → float 25.0)
+        - Domain-specific requirements
+        """
+        normalized = {}
+        
+        for key, value in params.items():
+            # Normalize parameter names
+            if key == "target_temperature":
+                key = "temperature"  # HA climate uses "temperature"
+            
+            # Type conversion based on parameter
+            if key == "temperature":
+                # Parse temperature strings to float
+                if isinstance(value, str):
+                    # Remove units like "°C", "°F", "degrees", etc.
+                    import re
+                    clean = re.sub(r'[°CFcf\s]|degrees?|grad', '', value, flags=re.IGNORECASE)
+                    try:
+                        value = float(clean)
+                    except ValueError:
+                        _LOGGER.warning("Could not parse temperature '%s', using as-is", value)
+            
+            elif key in ("brightness", "color_temp", "percentage", "position"):
+                # These should be integers or floats
+                if isinstance(value, str):
+                    try:
+                        value = int(value) if value.isdigit() else float(value)
+                    except ValueError:
+                        _LOGGER.warning("Could not parse numeric value '%s', using as-is", value)
+            
+            normalized[key] = value
+        
+        return normalized
     
     
     def _action_to_service(self, action: str, domain: str = "light") -> str:

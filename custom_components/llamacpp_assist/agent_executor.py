@@ -260,14 +260,88 @@ class TaskExecutor:
     async def _execute_calendar_query(self, task: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute calendar query task."""
         task_id = task.get("id", "unknown")
+        start_iso = task.get("start_iso")
+        end_iso = task.get("end_iso")
         
-        # Calendar query would use calendar integration
+        if not start_iso or not end_iso:
+            return [{
+                "task_id": task_id,
+                "task_type": "calendar_query",
+                "operation": "calendar_query",
+                "success": False,
+                "error": "Missing start or end date",
+            }]
+        
+        # Get all calendar entities
+        calendar_entities = [
+            state.entity_id
+            for state in self.hass.states.async_all()
+            if state.entity_id.startswith("calendar.")
+        ]
+        
+        if not calendar_entities:
+            return [{
+                "task_id": task_id,
+                "task_type": "calendar_query",
+                "operation": "calendar_query",
+                "events": [],
+                "success": True,
+                "message": "No calendars found",
+            }]
+        
+        # Query events from all calendars
+        all_events = []
+        
+        for calendar_entity in calendar_entities:
+            try:
+                # Use calendar.get_events service to fetch events
+                response = await self.hass.services.async_call(
+                    "calendar",
+                    "get_events",
+                    {
+                        "entity_id": calendar_entity,
+                        "start_date_time": start_iso,
+                        "end_date_time": end_iso,
+                    },
+                    blocking=True,
+                    return_response=True,
+                )
+                
+                # Extract events from response
+                if response and calendar_entity in response:
+                    events = response[calendar_entity].get("events", [])
+                    for event in events:
+                        all_events.append({
+                            "calendar": calendar_entity,
+                            "summary": event.get("summary", ""),
+                            "start": event.get("start", ""),
+                            "end": event.get("end", ""),
+                            "description": event.get("description", ""),
+                            "location": event.get("location", ""),
+                        })
+                
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to query calendar %s: %s",
+                    calendar_entity,
+                    err
+                )
+                continue
+        
+        _LOGGER.info(
+            "Found %d calendar events between %s and %s",
+            len(all_events),
+            start_iso[:10],
+            end_iso[:10]
+        )
+        
         return [{
             "task_id": task_id,
             "task_type": "calendar_query",
             "operation": "calendar_query",
-            "success": False,
-            "error": "Calendar query not yet fully implemented",
+            "events": all_events,
+            "event_count": len(all_events),
+            "success": True,
         }]
     
     async def _execute_calendar_create(self, task: dict[str, Any]) -> list[dict[str, Any]]:
