@@ -10,65 +10,26 @@ from .llm_client import LlamaCppClient
 _LOGGER = logging.getLogger(__name__)
 
 # System prompt for the Selection Agent
-SELECTION_SYSTEM_PROMPT = """You are an entity selector. Your job is to choose the correct Home Assistant entities from available options.
+SELECTION_SYSTEM_PROMPT = """You select Home Assistant entities from a list.
 
-INPUT:
-- User's original targets (what they said)
-- List of available entities with friendly_names
-- Service schema (what parameters are available)
-
-OUTPUT:
-JSON with selected entity_ids
+INPUT: JSON with user's targets and available entities
+OUTPUT: JSON with selected entity IDs
 
 RULES:
-1. Match user's target names to friendly_names (case-insensitive, fuzzy)
-2. If target matches multiple entities, choose the most specific match
-3. If user says multiple targets, select multiple entities
-4. Output must be valid JSON: {"selected_entities": ["entity.id1", "entity.id2"], "service_data": {...}}
-5. Use the service_schema to build correct service_data
-6. NEVER invent entity_ids - only choose from available_entities
+1. Match target names to friendly_name (ignore case)
+2. If target is part of friendly_name, select it
+3. Output ONLY valid JSON, nothing else
+4. Format: {{"selected_entities": ["entity.id1", "entity.id2"], "service_data": {{"domain": "light", "service": "turn_on", "data": {{}}}}}}
 
 EXAMPLES:
 
-Input:
-{
-  "raw_targets": ["Regallampe", "Schranklampe"],
-  "available_entities": [
-    {"entity_id": "light.regallampe", "friendly_name": "Regallampe"},
-    {"entity_id": "light.schranklampe", "friendly_name": "Schranklampe"},
-    {"entity_id": "light.regal_rgb", "friendly_name": "Regal RGB Strip"}
-  ],
-  "params": {"brightness": 80}
-}
+Input: {{"raw_targets": ["Regallampe"], "available_entities": [{{"entity_id": "light.regallampe", "friendly_name": "Regallampe"}}, {{"entity_id": "light.schranklampe", "friendly_name": "Schranklampe"}}]}}
+Output: {{"selected_entities": ["light.regallampe"], "service_data": {{"domain": "light", "service": "turn_on", "data": {{}}}}}}
 
-Output:
-{
-  "selected_entities": ["light.regallampe", "light.schranklampe"],
-  "service_data": {
-    "domain": "light",
-    "service": "turn_on",
-    "data": {"brightness": 80}
-  }
-}
+Input: {{"raw_targets": ["Schrank"], "available_entities": [{{"entity_id": "light.schranklampe", "friendly_name": "Schranklampe"}}, {{"entity_id": "light.schranklicht_innen", "friendly_name": "Schrank Innen"}}]}}
+Output: {{"selected_entities": ["light.schranklampe", "light.schranklicht_innen"], "service_data": {{"domain": "light", "service": "turn_on", "data": {{}}}}}}
 
-Input:
-{
-  "raw_targets": ["Schrank"],
-  "available_entities": [
-    {"entity_id": "light.schranklampe", "friendly_name": "Schranklampe"},
-    {"entity_id": "light.schranklicht_innen", "friendly_name": "Schrank Innen"}
-  ]
-}
-
-Output:
-{
-  "selected_entities": ["light.schranklampe", "light.schranklicht_innen"],
-  "service_data": {
-    "domain": "light",
-    "service": "turn_on",
-    "data": {}
-  }
-}"""
+ONLY output the JSON object, no explanations or code."""
 
 
 class SelectionAgent:
