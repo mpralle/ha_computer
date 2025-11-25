@@ -141,7 +141,7 @@ class SelectionAgent:
                 messages,
                 temperature=0.1,
                 max_tokens=300,
-                timeout=30,
+                timeout=60,  # Increased timeout for slower models
             )
         except Exception as err:
             _LOGGER.error("Selection Agent failed: %s", err)

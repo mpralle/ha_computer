@@ -70,16 +70,9 @@ class TaskResolver:
                     "domain": domain,
                 })
         
-        # Get service schema
-        action = task.get("action", "turn_on")
-        service_name = self._action_to_service(action)
-        
-        try:
-            descriptions = await self.hass.services.async_get_all_descriptions()
-            service_schema = descriptions.get(domain, {}).get(service_name, {})
-        except Exception as err:
-            _LOGGER.warning("Failed to get service schema for %s.%s: %s", domain, service_name, err)
-            service_schema = {}
+        # Get service schema (skip for now - not essential for selection)
+        # The Selection Agent can work without detailed schema
+        service_schema = {}
         
         task["available_entities"] = available
         task["service_schema"] = service_schema
