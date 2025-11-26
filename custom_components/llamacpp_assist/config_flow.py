@@ -18,7 +18,10 @@ from .const import (
     CONF_ENABLE_MULTI_AGENT,
     CONF_MAX_TOKENS,
     CONF_MODEL_NAME,
+    CONF_PLANNER_URL,
+    CONF_SELECTOR_URL,
     CONF_SERVER_URL,
+    CONF_SUMMARISER_URL,
     CONF_SYSTEM_PROMPT_PREFIX,
     CONF_TEMPERATURE,
     CONF_TIMEOUT,
@@ -173,6 +176,11 @@ class LlamaCppAssistOptionsFlow(config_entries.OptionsFlow):
         current_multi_agent = self.config_entry.options.get(
             CONF_ENABLE_MULTI_AGENT, False
         )
+        
+        # Per-agent URLs (optional - empty means use main server_url)
+        current_planner_url = self.config_entry.options.get(CONF_PLANNER_URL, "")
+        current_selector_url = self.config_entry.options.get(CONF_SELECTOR_URL, "")
+        current_summariser_url = self.config_entry.options.get(CONF_SUMMARISER_URL, "")
 
         options_schema = vol.Schema(
             {
@@ -191,6 +199,21 @@ class LlamaCppAssistOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_ENABLE_MULTI_AGENT, default=current_multi_agent
                 ): bool,
+                vol.Optional(
+                    CONF_PLANNER_URL,
+                    default=current_planner_url,
+                    description={"suggested_value": current_planner_url}
+                ): str,
+                vol.Optional(
+                    CONF_SELECTOR_URL,
+                    default=current_selector_url,
+                    description={"suggested_value": current_selector_url}
+                ): str,
+                vol.Optional(
+                    CONF_SUMMARISER_URL,
+                    default=current_summariser_url,
+                    description={"suggested_value": current_summariser_url}
+                ): str,
             }
         )
 

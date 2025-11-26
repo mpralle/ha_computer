@@ -12,6 +12,11 @@ CONF_TIMEOUT = "timeout"
 CONF_SYSTEM_PROMPT_PREFIX = "system_prompt_prefix"
 CONF_ENABLE_MULTI_AGENT = "enable_multi_agentic_system"
 
+# Per-agent LLM server URLs (optional - fallback to main server_url)
+CONF_PLANNER_URL = "planner_server_url"
+CONF_SELECTOR_URL = "selector_server_url"
+CONF_SUMMARISER_URL = "summariser_server_url"
+
 # Defaults
 DEFAULT_SERVER_URL = "http://localhost:8080"
 DEFAULT_TEMPERATURE = 0.7

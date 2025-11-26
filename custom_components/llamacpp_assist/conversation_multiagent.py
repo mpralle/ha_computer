@@ -21,8 +21,12 @@ from .agent_summariser import SummariserAgent
 
 from .const import (
     CONF_API_KEY,
+    CONF_ENABLE_MULTI_AGENT,
     CONF_MAX_TOKENS,
+    CONF_PLANNER_URL,
+    CONF_SELECTOR_URL,
     CONF_SERVER_URL,
+    CONF_SUMMARISER_URL,
     CONF_TEMPERATURE,
     CONF_TIMEOUT,
     DEFAULT_MAX_TOKENS,
@@ -38,7 +42,7 @@ class MultiAgentConversationEntity(conversation.AbstractConversationAgent):
     """Multi-agent conversation entity using 5-agent pipeline."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the  agent."""
+        """Initialize the agent."""
         self.hass = hass
         self.entry = entry
 
@@ -46,14 +50,26 @@ class MultiAgentConversationEntity(conversation.AbstractConversationAgent):
         config = entry.data
         options = entry.options
 
-        server_url = config[CONF_SERVER_URL]
+        main_server_url = config[CONF_SERVER_URL]
         api_key = config.get(CONF_API_KEY)
         
-        # Create LLM client
         session = async_get_clientsession(hass)
-        self.llm_client = LlamaCppClient(server_url, api_key, session)
-
-        _LOGGER.info("Initialized multi-agent conversation pipeline")
+        
+        # Create LLM clients for each agent (with optional per-agent URLs)
+        planner_url = options.get(CONF_PLANNER_URL) or main_server_url
+        selector_url = options.get(CONF_SELECTOR_URL) or main_server_url
+        summariser_url = options.get(CONF_SUMMARISER_URL) or main_server_url
+        
+        self.planner_client = LlamaCppClient(planner_url, api_key, session)
+        self.selector_client = LlamaCppClient(selector_url, api_key, session)
+        self.summariser_client = LlamaCppClient(summariser_url, api_key, session)
+        
+        _LOGGER.info(
+            "Initialized multi-agent pipeline - Planner: %s, Selector: %s, Summariser: %s",
+            planner_url,
+            selector_url,
+            summariser_url,
+        )
 
     @property
     def attribution(self) -> dict[str, Any]:
@@ -80,8 +96,8 @@ class MultiAgentConversationEntity(conversation.AbstractConversationAgent):
         _LOGGER.info("Processing: %s", user_input.text)
 
         try:
-            # 1. PLAN
-            planner = PlannerAgent(self.llm_client)
+            # 1. PLAN (using planner-specific client)
+            planner = PlannerAgent(self.planner_client)
             result = await planner.plan(user_input.text, datetime.now().isoformat())
 
             # Check if it's a conversational response or tasks
@@ -115,8 +131,8 @@ class MultiAgentConversationEntity(conversation.AbstractConversationAgent):
             resolved_tasks = await resolver.resolve_tasks(tasks)
             _LOGGER.info("Resolver processed %d task(s)", len(resolved_tasks))
 
-            # 3. SELECT (LLM chooses specific entities from available options)
-            selector = SelectionAgent(self.llm_client)
+            # 3. SELECT (LLM chooses specific entities - using selector-specific client)
+            selector = SelectionAgent(self.selector_client)
             concrete_tasks = await selector.select(resolved_tasks)
             _LOGGER.info("Selector processed %d task(s)", len(concrete_tasks))
 
@@ -129,8 +145,8 @@ class MultiAgentConversationEntity(conversation.AbstractConversationAgent):
                 execution_report.get("failed_operations", 0),
             )
 
-            # 5. SUMMARISE
-            summariser = SummariserAgent(self.llm_client)
+            # 5. SUMMARISE (using summariser-specific client)
+            summariser = SummariserAgent(self.summariser_client)
             response_text = await summariser.summarise(user_input.text, execution_report)
 
             # Return result

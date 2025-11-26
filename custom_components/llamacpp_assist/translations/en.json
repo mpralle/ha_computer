@@ -40,13 +40,21 @@
                     "temperature": "Temperature",
                     "max_tokens": "Max Tokens",
                     "timeout": "Timeout (seconds)",
-                    "system_prompt_prefix": "System Prompt Prefix"
+                    "system_prompt_prefix": "System Prompt Prefix",
+                    "enable_multi_agentic_system": "Enable Multi-Agent System",
+                    "planner_server_url": "Planner Server URL (optional)",
+                    "selector_server_url": "Selector Server URL (optional)",
+                    "summariser_server_url": "Summariser Server URL (optional)"
                 },
                 "data_description": {
                     "temperature": "Controls randomness (0.0 = deterministic, 2.0 = very creative)",
                     "max_tokens": "Maximum tokens in response",
                     "timeout": "Request timeout in seconds",
-                    "system_prompt_prefix": "Custom text to prepend to the system prompt"
+                    "system_prompt_prefix": "Custom text to prepend to the system prompt",
+                    "enable_multi_agentic_system": "Enable the multi-agent system (Planner, Resolver, Selector, Executor, Summariser)",
+                    "planner_server_url": "Separate server URL for the Planner agent. Leave empty to use main server.",
+                    "selector_server_url": "Separate server URL for the Selector agent. Leave empty to use main server.",
+                    "summariser_server_url": "Separate server URL for the Summariser agent. Leave empty to use main server."
                 }
             }
         }
