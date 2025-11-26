@@ -95,10 +95,18 @@ class TaskResolver:
             return "light"
         if any(word in text for word in ["steckdose", "schalter", "switch", "plug"]):
             return "switch"
-        if any(word in text for word in ["cover", "blind", "jalousie", "rollo"]):
+        if any(word in text for word in ["thermostat", "heizung", "heating", "hvac", "klima"]):
+            return "climate"
+        if any(word in text for word in ["musik", "music", "fernseher", "tv", "lautsprecher", "speaker", "media", "player", "radio"]):
+            return "media_player"
+        if any(word in text for word in ["cover", "blind", "jalousie", "rollo", "vorhang", "curtain"]):
             return "cover"
         if any(word in text for word in ["fan", "lüfter", "ventilator"]):
             return "fan"
+        if any(word in text for word in ["lock", "schloss", "türschloss"]):
+            return "lock"
+        if any(word in text for word in ["vacuum", "staubsauger"]):
+            return "vacuum"
         
         # Default to light
         return "light"

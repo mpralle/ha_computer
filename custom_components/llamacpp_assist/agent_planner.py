@@ -39,6 +39,20 @@ TASK TYPES:
 - memory_write: Write to memory
   Fields: key, value
 
+VALID HOME ASSISTANT DOMAINS:
+- light: Lights (Lampe, Licht, Light)
+- switch: Switches, Plugs (Steckdose, Schalter)
+- climate: Thermostats, HVAC (Thermostat, Heizung)
+- media_player: Music, TV, Speakers (Musikanlage, Fernseher, Lautsprecher)
+- cover: Blinds, Curtains (Jalousie, Rollo, Vorhang)
+- lock: Door locks (Schloss, Türschloss)
+- fan: Fans (Lüfter, Ventilator)
+- vacuum: Vacuum cleaners (Staubsauger)
+- sensor: Sensors (only for reading, not controlling)
+- binary_sensor: Binary sensors (only for reading, not controlling)
+
+IMPORTANT: Only use these exact domain names! Do NOT invent domains like "audio", "music", "heating" - use the correct ones from the list above.
+
 RULES FOR TASKS:
 1. Output: {{"tasks": [...]}}
 2. Keep raw_targets and raw_items exactly as the user said them

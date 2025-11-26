@@ -173,9 +173,9 @@ class SelectionAgent:
         service_params = dict(params)  # Start with explicit params
         
         # Extract common service parameters that might be at task level
-        param_fields = ["temperature", "target_temperature", "hvac_mode", "brightness", 
-                       "color_temp", "position", "percentage", "speed", "volume_level", 
-                       "media_content_id"]
+        param_fields = ["temperature", "target_temperature", "temp",  # Temperature variations
+                       "hvac_mode", "brightness", "color_temp", "position", 
+                       "percentage", "speed", "volume_level", "media_content_id"]
         for field in param_fields:
             if field in task and field not in service_params:
                 service_params[field] = task[field]
@@ -261,8 +261,9 @@ class SelectionAgent:
         
         for key, value in params.items():
             # Normalize parameter names
-            if key == "target_temperature":
+            if key in ("target_temperature", "temp"):
                 key = "temperature"  # HA climate uses "temperature"
+
             
             # Type conversion based on parameter
             if key == "temperature":
