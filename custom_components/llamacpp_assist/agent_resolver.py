@@ -107,6 +107,8 @@ class TaskResolver:
             return "lock"
         if any(word in text for word in ["vacuum", "staubsauger"]):
             return "vacuum"
+        if any(word in text for word in ["timer", "countdown", "stoppuhr"]):
+            return "timer"
         
         # Default to light
         return "light"

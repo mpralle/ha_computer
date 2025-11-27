@@ -371,6 +371,17 @@ class SelectionAgent:
             }
             return mapping.get(action_lower, "start")
         
+        elif domain == "timer":
+            mapping = {
+                "start": "start",
+                "pause": "pause",
+                "cancel": "cancel",
+                "finish": "finish",
+                "turn_on": "start",
+                "turn_off": "cancel",
+            }
+            return mapping.get(action_lower, "start")
+        
         elif domain in ("light", "switch"):
             # Standard on/off/toggle devices
             mapping = {

@@ -48,6 +48,7 @@ VALID HOME ASSISTANT DOMAINS:
 - lock: Door locks (Schloss, Türschloss)
 - fan: Fans (Lüfter, Ventilator)
 - vacuum: Vacuum cleaners (Staubsauger)
+- timer: Timers (Timer, Countdown, Stoppuhr)
 - sensor: Sensors (only for reading, not controlling)
 - binary_sensor: Binary sensors (only for reading, not controlling)
 
