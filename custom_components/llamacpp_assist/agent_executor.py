@@ -75,6 +75,8 @@ class TaskExecutor:
         
         if task_type == "device_control":
             return await self._execute_device_control(task, executed_signatures)
+        elif task_type == "timer_start":
+            return await self._execute_timer_start(task)
         elif task_type == "shopping_add":
             return await self._execute_shopping_add(task)
         elif task_type == "shopping_query":
@@ -165,6 +167,58 @@ class TaskExecutor:
                 })
         
         return results
+    
+    async def _execute_timer_start(self, task: dict[str, Any]) -> list[dict[str, Any]]:
+        """Execute timer start task."""
+        task_id = task.get("id", "unknown")
+        duration_seconds = task.get("duration_seconds", 300)
+        timer_name = task.get("name", "Timer")
+        
+        try:
+            # Convert duration to HH:MM:SS format
+            hours = duration_seconds // 3600
+            minutes = (duration_seconds % 3600) // 60
+            seconds = duration_seconds % 60
+            duration_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            
+            # Create a timer entity ID from the name
+            # Sanitize the name to create a valid entity ID
+            import re
+            safe_name = re.sub(r'[^a-z0-9_]', '_', timer_name.lower())
+            entity_id = f"timer.{safe_name}"
+            
+            # Start the timer
+            await self.hass.services.async_call(
+                "timer",
+                "start",
+                {
+                    "entity_id": entity_id,
+                    "duration": duration_formatted,
+                },
+                blocking=True,
+            )
+            
+            _LOGGER.info("Started timer %s for %s", entity_id, duration_formatted)
+            
+            return [{
+                "task_id": task_id,
+                "task_type": "timer_start",
+                "operation": "timer_start",
+                "entity": entity_id,
+                "duration": duration_formatted,
+                "name": timer_name,
+                "success": True,
+            }]
+            
+        except Exception as err:
+            _LOGGER.error("Failed to start timer: %s", err)
+            return [{
+                "task_id": task_id,
+                "task_type": "timer_start",
+                "operation": "timer_start",
+                "success": False,
+                "error": str(err),
+            }]
     
     async def _execute_shopping_add(self, task: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute shopping add task."""

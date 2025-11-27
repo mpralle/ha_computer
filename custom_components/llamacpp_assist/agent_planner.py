@@ -18,6 +18,9 @@ TASK TYPES:
 - device_control: Control lights, switches, etc.
   Fields: action (turn_on/turn_off/toggle/set), raw_targets (list of names as user said them), domain (optional), params (optional)
 
+- timer_start: Start a new timer
+  Fields: duration (string like "5 minutes", "1 hour"), name (optional timer name)
+
 - shopping_add: Add items to shopping list
   Fields: raw_items (string, keep exactly as user said it)
 

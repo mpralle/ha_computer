@@ -40,6 +40,8 @@ class TaskResolver:
             
             if task_type == "device_control":
                 resolved_task = await self._resolve_device_control(task)
+            elif task_type == "timer_start":
+                resolved_task = self._resolve_timer_start(task)
             elif task_type == "shopping_add":
                 resolved_task = self._resolve_shopping_add(task)
             elif task_type == "calendar_query":
@@ -112,6 +114,53 @@ class TaskResolver:
         
         # Default to light
         return "light"
+    
+    def _resolve_timer_start(self, task: dict[str, Any]) -> dict[str, Any]:
+        """Parse duration for timer start."""
+        duration_str = task.get("duration", "")
+        
+        # Parse duration to seconds
+        duration_seconds = self._parse_duration(duration_str)
+        
+        task["duration_seconds"] = duration_seconds
+        task["status"] = "ready_for_execution"
+        
+        _LOGGER.info(
+            "Resolved timer_start: '%s' → %d seconds",
+            duration_str,
+            duration_seconds,
+        )
+        
+        return task
+    
+    def _parse_duration(self, duration_str: str) -> int:
+        """Parse duration string to seconds."""
+        if not duration_str:
+            return 300  # Default 5 minutes
+        
+        duration_lower = duration_str.lower().strip()
+        
+        # Extract number and unit
+        import re
+        match = re.search(r'(\d+)\s*(second|sekunde|minute|minuten|hour|stunde|stunden)?', duration_lower)
+        
+        if not match:
+            _LOGGER.warning("Could not parse duration '%s', using 5 minutes", duration_str)
+            return 300
+        
+        number = int(match.group(1))
+        unit = match.group(2) or "minute"
+        
+        # Convert to seconds
+        if unit.startswith("second") or unit.startswith("sekunde"):
+            return number
+        elif unit.startswith("minute") or unit.startswith("minuten"):
+            return number * 60
+        elif unit.startswith("hour") or unit.startswith("stunde"):
+            return number * 3600
+        else:
+            _LOGGER.warning("Unknown duration unit '%s', treating as minutes", unit)
+            return number * 60
     
     def _action_to_service(self, action: str) -> str:
         """Convert action to service name."""
