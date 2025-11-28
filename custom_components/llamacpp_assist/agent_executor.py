@@ -174,6 +174,28 @@ class TaskExecutor:
         duration_seconds = task.get("duration_seconds", 300)
         timer_name = task.get("name", "Timer")
         
+        # Find available timer entities
+        timer_entities = [
+            state.entity_id
+            for state in self.hass.states.async_all()
+            if state.entity_id.startswith("timer.")
+        ]
+        
+        if not timer_entities:
+            return [{
+                "task_id": task_id,
+                "task_type": "timer_start",
+                "operation": "timer_start",
+                "success": False,
+                "error": (
+                    "No timer entities found. Please configure a timer in your "
+                    "configuration.yaml first. Example:\n"
+                    "timer:\n"
+                    "  my_timer:\n"
+                    "    name: My Timer"
+                ),
+            }]
+        
         try:
             # Convert duration to HH:MM:SS format
             hours = duration_seconds // 3600
@@ -181,13 +203,17 @@ class TaskExecutor:
             seconds = duration_seconds % 60
             duration_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
             
-            # Create a timer entity ID from the name
-            # Sanitize the name to create a valid entity ID
-            import re
-            safe_name = re.sub(r'[^a-z0-9_]', '_', timer_name.lower())
-            entity_id = f"timer.{safe_name}"
+            # Use the first available timer entity
+            entity_id = timer_entities[0]
             
-            # Start the timer
+            _LOGGER.info(
+                "Starting timer %s for %s (name: %s)",
+                entity_id,
+                duration_formatted,
+                timer_name
+            )
+            
+            # Start the timer with just the duration
             await self.hass.services.async_call(
                 "timer",
                 "start",
@@ -198,15 +224,13 @@ class TaskExecutor:
                 blocking=True,
             )
             
-            _LOGGER.info("Started timer %s for %s", entity_id, duration_formatted)
-            
             return [{
                 "task_id": task_id,
                 "task_type": "timer_start",
                 "operation": "timer_start",
                 "entity": entity_id,
                 "duration": duration_formatted,
-                "name": timer_name,
+                "requested_name": timer_name,
                 "success": True,
             }]
             
